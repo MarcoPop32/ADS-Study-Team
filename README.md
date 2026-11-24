@@ -15,8 +15,8 @@ Transforma qualquer assunto de aula de **Análise e Desenvolvimento de Sistemas 
 
 1. **Clone o repositório e crie o ambiente virtual:**
    ```powershell
-   git clone <URL_DO_SEU_REPOSITORIO>
-   cd ads-study-team
+   git clone https://github.com/MarcoPop32/ADS-Study-Team.git
+   cd ADS-Study-Team
    python -m venv .venv
    ```
 
