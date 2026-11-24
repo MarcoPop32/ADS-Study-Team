@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ADS Study Material Schema",
+  "type": "object",
+  "required": ["meta", "secoes_estudo", "certo_errado", "simulado", "referencias"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["titulo", "disciplina", "resumo_curto", "tempo_leitura_min", "versao"],
+      "additionalProperties": false,
+      "properties": {
+        "titulo": { "type": "string", "minLength": 5 },
+        "disciplina": { "type": "string", "minLength": 2 },
+        "resumo_curto": { "type": "string", "minLength": 10 },
+        "tempo_leitura_min": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "versao": { "type": "string", "minLength": 2 }
+      }
+    },
+    "secoes_estudo": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "titulo",
+          "explicacao_curta",
+          "analogia",
+          "codigo_c",
+          "explicacao_codigo",
+          "armadilha_comum"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 2 },
+          "titulo": { "type": "string", "minLength": 3 },
+          "explicacao_curta": { "type": "string", "minLength": 15 },
+          "analogia": { "type": "string", "minLength": 10 },
+          "codigo_c": { "type": "string", "minLength": 15 },
+          "explicacao_codigo": { "type": "string", "minLength": 15 },
+          "armadilha_comum": { "type": "string", "minLength": 10 }
+        }
+      }
+    },
+    "certo_errado": {
+      "type": "array",
+      "minItems": 6,
+      "items": {
+        "type": "object",
+        "required": ["id", "enunciado", "gabarito", "explicacao_passos", "ponto_chave"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 2 },
+          "topico": { "type": "string", "minLength": 2 },
+          "enunciado": { "type": "string", "minLength": 10 },
+          "gabarito": { "type": "boolean" },
+          "explicacao_passos": {
+            "type": "array",
+            "minItems": 2,
+            "items": { "type": "string", "minLength": 5 }
+          },
+          "ponto_chave": { "type": "string", "minLength": 5 }
+        }
+      }
+    },
+    "simulado": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "enunciado",
+          "codigo_opcional",
+          "alternativas",
+          "correta",
+          "explicacao_correta",
+          "por_que_outras_falham"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 2 },
+          "topico": { "type": "string", "minLength": 2 },
+          "enunciado": { "type": "string", "minLength": 10 },
+          "codigo_opcional": { "type": "string" },
+          "alternativas": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "correta": { "type": "integer", "minimum": 0, "maximum": 3 },
+          "explicacao_correta": { "type": "string", "minLength": 10 },
+          "por_que_outras_falham": { "type": "string", "minLength": 10 }
+        }
+      }
+    },
+    "referencias": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["titulo", "url", "tipo"],
+        "additionalProperties": false,
+        "properties": {
+          "titulo": { "type": "string", "minLength": 3 },
+          "url": { "type": "string", "pattern": "^https?://" },
+          "tipo": { "type": "string", "minLength": 2 }
+        }
+      }
+    }
+  }
+}

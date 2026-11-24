@@ -1,0 +1,32 @@
+{
+  "versao": "v3",
+  "tema": "Ponteiros, Struct e Arquivo em C (ATP)",
+  "rodada": 1,
+  "max_rodadas": 2,
+  "status": "APROVADO",
+  "nota_total": 97,
+  "criterios": {
+    "precisao_fontes": {
+      "nota": 25,
+      "max": 25,
+      "obs": "Inclui regra oficial de sincronizacao fseek/fflush em modo r+ e struct por valor vs ponteiro."
+    },
+    "clareza_didatica": {
+      "nota": 25,
+      "max": 25,
+      "obs": "Busca instantanea + Simulador de Memoria + Cola Rapida interativa de modos fopen()."
+    },
+    "questoes_simulado": {
+      "nota": 24,
+      "max": 25,
+      "obs": "10 Certo/Errado filtraveis por topico + 8 questoes de Simulado estilo prova ADS/ATP."
+    },
+    "interface_ux": {
+      "nota": 23,
+      "max": 25,
+      "obs": "Modo escuro, Copiar codigo, Imprimir/PDF, 0 erros de console e 0px de overflow em 700px (Google Sites)."
+    }
+  },
+  "agente_mais_fraco": "none",
+  "observacoes": "Nota maxima pratica sem compilador C embutido no navegador; pronta para publicacao na Parte 5."
+}

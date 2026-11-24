@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Guia Interativo ADS</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div class="hero-top">
+        <div class="hero-badges">
+          <span id="meta-disciplina" class="badge">ATP — ADS</span>
+          <span id="meta-versao" class="badge badge-muted">v2</span>
+        </div>
+        <div class="toolbar-actions no-print">
+          <button id="btn-theme" class="btn-tool" type="button" aria-label="Alternar tema">Modo Escuro</button>
+          <button id="btn-print" class="btn-tool" type="button">Imprimir / PDF</button>
+          <button id="btn-clear-progress" class="btn-tool" type="button">Limpar Progresso</button>
+        </div>
+      </div>
+      <h1 id="meta-titulo">Carregando material...</h1>
+      <p id="meta-resumo" class="subtitle"></p>
+      <div class="meta-bar">
+        <span id="meta-tempo"></span>
+        <span id="meta-contagem"></span>
+      </div>
+    </header>
+
+    <nav class="tabs no-print" role="tablist" aria-label="Navegação do material">
+      <button class="tab-btn active" data-tab="resumo" role="tab" aria-selected="true">Resumo Direto</button>
+      <button class="tab-btn" data-tab="ce" role="tab" aria-selected="false">Certo ou Errado</button>
+      <button class="tab-btn" data-tab="simulado" role="tab" aria-selected="false">Simulado</button>
+    </nav>
+
+    <main>
+      <section id="tab-resumo" class="tab-panel active">
+        <article class="card sim-mem-card" aria-label="Simulador Visual de Memória e Ponteiros">
+          <div class="panel-header">
+            <div>
+              <h3>Simulador Visual de Memória (&amp;, *, -&gt;)</h3>
+              <p class="muted">Avance passo a passo para enxergar endereços, ponteiros e struct na RAM.</p>
+            </div>
+            <span id="mem-step-badge" class="pill-score">Passo 1 / 5</span>
+          </div>
+          <div class="mem-code-line"><code id="mem-code-line"></code></div>
+          <div id="mem-boxes" class="mem-grid"></div>
+          <p id="mem-explain" class="callout callout-analogia"></p>
+          <div class="mem-controls no-print">
+            <button id="mem-prev" class="btn-secondary" type="button">Anterior</button>
+            <button id="mem-next" class="btn-primary" type="button">Próximo Passo</button>
+            <button id="mem-reset" class="btn-secondary" type="button">Reiniciar</button>
+          </div>
+        </article>
+        <div id="resumo-cards" class="stack"></div>
+      </section>
+
+      <section id="tab-ce" class="tab-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Questões Certo ou Errado</h2>
+            <p class="muted">Responda para ver a explicação passo a passo na hora.</p>
+          </div>
+          <div id="ce-placar" class="pill-score">0 / 0 respondidas</div>
+        </div>
+        <div id="ce-lista" class="stack"></div>
+      </section>
+
+      <section id="tab-simulado" class="tab-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Simulado Prático</h2>
+            <p class="muted">Marque uma alternativa por questão e clique em Finalizar.</p>
+          </div>
+          <div class="sim-status-group">
+            <div class="timer-box no-print">
+              <span id="sim-timer" class="pill-score">00:00</span>
+              <button id="btn-timer-toggle" class="btn-tool" type="button">Iniciar Timer</button>
+              <button id="btn-timer-reset" class="btn-tool" type="button">Zerar</button>
+            </div>
+            <div id="sim-progresso" class="pill-score">0 / 0 marcadas</div>
+          </div>
+        </div>
+        <div class="progress-track no-print" aria-hidden="true">
+          <div id="sim-progress-fill" class="progress-fill"></div>
+        </div>
+        <div id="sim-lista" class="stack"></div>
+        <div id="sim-warning" class="callout callout-armadilha no-print" hidden></div>
+        <div class="sim-actions no-print">
+          <button id="btn-finalizar-simulado" class="btn-primary" type="button">Finalizar Simulado</button>
+          <button id="btn-force-finalizar" class="btn-secondary" type="button" hidden>Finalizar mesmo assim</button>
+          <button id="btn-filter-wrong" class="btn-secondary" type="button" hidden>Ver apenas as que errei</button>
+          <button id="btn-retry-wrong" class="btn-secondary" type="button" hidden>Refazer apenas erradas</button>
+          <button id="btn-refazer-simulado" class="btn-secondary" type="button" hidden>Refazer Simulado</button>
+        </div>
+        <div id="sim-resultado" class="result-banner" hidden></div>
+      </section>
+    </main>
+
+    <footer class="refs-footer">
+      <h3>Referências Técnicas Verificadas</h3>
+      <ul id="lista-referencias"></ul>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

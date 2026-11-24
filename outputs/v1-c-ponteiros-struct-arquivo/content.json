@@ -1,0 +1,245 @@
+{
+  "meta": {
+    "titulo": "Ponteiros, Struct e Arquivo em C",
+    "disciplina": "ATP — Análise e Desenvolvimento de Sistemas",
+    "resumo_curto": "Guia direto ao ponto sobre endereços de memória, registros (struct), operador seta (->) e leitura/gravação de arquivos (FILE *) com questões comentadas.",
+    "tempo_leitura_min": 5,
+    "versao": "v1"
+  },
+  "secoes_estudo": [
+    {
+      "id": "ponteiros",
+      "titulo": "1. Ponteiros (&, * e passagem por referência)",
+      "explicacao_curta": "Um ponteiro é uma variável que armazena o endereço de memória de outra variável. Use & para pegar o endereço e * para ler ou alterar o valor guardado naquele endereço.",
+      "analogia": "A variável é a casa; o ponteiro é um papel com o endereço da casa escrito. Alterar o imóvel usando o endereço muda a casa original.",
+      "codigo_c": "#include <stdio.h>\n\nvoid dobrar(int *p) {\n    if (p != NULL) {\n        *p = (*p) * 2; // Altera o valor original na memoria\n    }\n}\n\nint main(void) {\n    int x = 10;\n    int *ptr = &x; // ptr guarda o endereco de x\n    dobrar(ptr);\n    printf(\"x = %d\\n\", x); // Imprime 20\n    return 0;\n}",
+      "explicacao_codigo": "int *ptr = &x guarda o endereço de x. Ao passar ptr para dobrar(), a função acessa diretamente a memória de x via *p e dobra seu valor sem retornar nada.",
+      "armadilha_comum": "Desreferenciar um ponteiro não inicializado ou NULL (*ptr = 5) causa falha de segmentação (crash imediato)."
+    },
+    {
+      "id": "structs",
+      "titulo": "2. Structs e o operador seta (->)",
+      "explicacao_curta": "Struct agrupa campos de tipos diferentes sob um mesmo nome. Se você tem a variável struct, acesse campos com ponto (.). Se você tem um ponteiro para struct, acesse com seta (->).",
+      "analogia": "Ponto (.) abre a gaveta diretamente com a mão; seta (->) segue o ponteiro até o armário e já abre a gaveta.",
+      "codigo_c": "#include <stdio.h>\n\ntypedef struct {\n    int id;\n    float nota;\n} Aluno;\n\nvoid darPontoExtra(Aluno *a, float bonus) {\n    if (a != NULL) {\n        a->nota += bonus; // Equivale a (*a).nota += bonus\n    }\n}\n\nint main(void) {\n    Aluno alu = {1, 7.0f};\n    darPontoExtra(&alu, 1.5f);\n    printf(\"Nota final: %.1f\\n\", alu.nota); // 8.5\n    return 0;\n}",
+      "explicacao_codigo": "Passar &alu evita copiar a struct inteira na pilha e permite que darPontoExtra altere o registro original usando a->nota.",
+      "armadilha_comum": "Escrever *a.nota em vez de (*a).nota ou a->nota: em C, o operador ponto (.) tem precedência maior que o asterisco (*), gerando erro de compilação."
+    },
+    {
+      "id": "arquivos-file",
+      "titulo": "3. Arquivos (FILE *, fopen, fclose e modos)",
+      "explicacao_curta": "Em C, todo arquivo aberto é controlado por um ponteiro FILE *. Você abre com fopen(caminho, modo), verifica se é diferente de NULL, lê/grava e sempre fecha com fclose(fp).",
+      "analogia": "fopen() pega a chave da sala e abre a porta; if (fp == NULL) confirma se a porta abriu mesmo; fclose() tranca e salva o que ficou no buffer.",
+      "codigo_c": "#include <stdio.h>\n#include <stdlib.h>\n\nint main(void) {\n    FILE *fp = fopen(\"notas.txt\", \"w\"); // \"w\" cria ou sobrescreve\n    if (fp == NULL) {\n        perror(\"Falha ao abrir arquivo\");\n        return EXIT_FAILURE;\n    }\n    fprintf(fp, \"Aluno: Ana | Nota: %.1f\\n\", 9.0);\n    fclose(fp);\n    return 0;\n}",
+      "explicacao_codigo": "O modo \"w\" cria o arquivo ou apaga o conteúdo anterior. Para acrescentar no fim use \"a\"; para ler use \"r\". Sempre cheque fp == NULL antes de usar fprintf ou fscanf.",
+      "armadilha_comum": "Abrir com \"w\" achando que vai preservar dados antigos: o modo \"w\" zera (trunca) o arquivo existente no instante em que abre."
+    },
+    {
+      "id": "integracao-binaria",
+      "titulo": "4. Gravando e lendo Structs em Arquivo (fwrite / fread)",
+      "explicacao_curta": "Para salvar structs em disco rapidamente, usamos arquivos binários (\"wb\" e \"rb\") com fwrite() e fread(), sempre checando quantos itens foram realmente gravados ou lidos.",
+      "analogia": "Texto (fprintf) traduz números para letras legíveis; binário (fwrite) copia os bytes diretos da struct como uma foto da memória.",
+      "codigo_c": "#include <stdio.h>\n\ntypedef struct {\n    int codigo;\n    char nome[40]; // Array fixo (nunca char * ao usar fwrite direto)\n    float preco;\n} Produto;\n\nint main(void) {\n    Produto p = {10, \"Teclado\", 149.90f};\n    FILE *fp = fopen(\"estoque.bin\", \"wb\");\n    if (fp != NULL) {\n        fwrite(&p, sizeof(Produto), 1, fp);\n        fclose(fp);\n    }\n\n    Produto lido;\n    fp = fopen(\"estoque.bin\", \"rb\");\n    if (fp != NULL && fread(&lido, sizeof(Produto), 1, fp) == 1) {\n        printf(\"%d - %s (R$ %.2f)\\n\", lido.codigo, lido.nome, lido.preco);\n    }\n    if (fp != NULL) fclose(fp);\n    return 0;\n}",
+      "explicacao_codigo": "No Windows, \"wb\" e \"rb\" evitam que \\n vire \\r\\n no meio dos bytes da struct. O retorno de fread(...) == 1 garante que 1 struct inteira foi lida com sucesso.",
+      "armadilha_comum": "Colocar char *nome dentro da struct e gravar com fwrite: você grava só o endereço de memória, não o texto; além disso, padding/endianness impedem portabilidade entre máquinas diferentes."
+    }
+  ],
+  "certo_errado": [
+    {
+      "id": "ce1",
+      "enunciado": "Se p é um ponteiro para struct Aluno (Aluno *p), a expressão p->nota é equivalente a (*p).nota.",
+      "gabarito": true,
+      "explicacao_passos": [
+        "Passo 1: p guarda o endereço de uma struct Aluno na memória.",
+        "Passo 2: (*p) desreferencia o ponteiro, obtendo a struct em si, e .nota acessa o campo.",
+        "Passo 3: O operador seta (->) existe exatamente como atalho direto para (*p).nota."
+      ],
+      "ponto_chave": "p->campo equivale a (*p).campo."
+    },
+    {
+      "id": "ce2",
+      "enunciado": "Ao abrir um arquivo com fopen(\"dados.txt\", \"w\"), se o arquivo já existir, o novo texto será adicionado ao final sem apagar o conteúdo antigo.",
+      "gabarito": false,
+      "explicacao_passos": [
+        "Passo 1: O modo \"w\" abre para escrita e trunca (zera) o arquivo se ele já existir.",
+        "Passo 2: O modo correto para acrescentar ao final mantendo o conteúdo antigo é \"a\" (append).",
+        "Passo 3: Portanto, a afirmação está errada."
+      ],
+      "ponto_chave": "\"w\" sobrescreve do zero; \"a\" acrescenta no final."
+    },
+    {
+      "id": "ce3",
+      "enunciado": "Em C, é seguro usar fwrite(&reg, sizeof(Registro), 1, fp) quando a struct Registro possui um campo char *nome alocado com malloc.",
+      "gabarito": false,
+      "explicacao_passos": [
+        "Passo 1: fwrite copia exatamente os bytes contíguos da struct.",
+        "Passo 2: Um campo char *nome ocupa apenas o tamanho de um endereço (4 ou 8 bytes), não os caracteres da string.",
+        "Passo 3: Ao ler o arquivo depois em outra execução, aquele endereço apontará para lixo de memória (dangling pointer)."
+      ],
+      "ponto_chave": "Nunca serialize ponteiros internos com fwrite direto; use char nome[TAM] fixo ou grave campo a campo."
+    },
+    {
+      "id": "ce4",
+      "enunciado": "Se fopen(\"entrada.txt\", \"r\") não encontrar o arquivo no disco, a função retorna NULL e o programa deve testar esse retorno antes de ler.",
+      "gabarito": true,
+      "explicacao_passos": [
+        "Passo 1: O modo \"r\" exige que o arquivo já exista.",
+        "Passo 2: Em caso de erro (arquivo inexistente ou sem permissão), fopen retorna NULL.",
+        "Passo 3: Passar NULL para fread/fscanf/fclose provoca comportamento indefinido e crash."
+      ],
+      "ponto_chave": "Sempre faça if (fp == NULL) após fopen()."
+    },
+    {
+      "id": "ce5",
+      "enunciado": "No Windows, abrir um arquivo binário usando apenas \"w\" ou \"r\" (sem o modificador \"b\") pode corromper dados de structs gravadas com fwrite/fread.",
+      "gabarito": true,
+      "explicacao_passos": [
+        "Passo 1: Sem \"b\", o stream é aberto em modo texto.",
+        "Passo 2: No Windows, o modo texto traduz \\n (0x0A) para \\r\\n (0x0D 0x0A) e trata 0x1A (Ctrl+Z) como fim de arquivo.",
+        "Passo 3: Como inteiros e floats dentro de uma struct podem conter esses bytes, usar \"wb\" e \"rb\" é obrigatório para evitar corrupção."
+      ],
+      "ponto_chave": "Arquivos binários no Windows exigem \"rb\" / \"wb\"."
+    },
+    {
+      "id": "ce6",
+      "enunciado": "A função fread(buf, sizeof(Aluno), 5, fp) retorna o total de bytes lidos do arquivo.",
+      "gabarito": false,
+      "explicacao_passos": [
+        "Passo 1: A assinatura de fread é fread(ptr, size, count, stream).",
+        "Passo 2: O retorno é o número de ELEMENTOS (de tamanho size) lidos com sucesso, e não o número de bytes.",
+        "Passo 3: No exemplo, se ler os 5 alunos completos, fread retorna 5 (e não 5 * sizeof(Aluno))."
+      ],
+      "ponto_chave": "fread e fwrite retornam a quantidade de itens (count) processados, não bytes."
+    },
+    {
+      "id": "ce7",
+      "enunciado": "Na expressão *p.campo, o compilador C interpreta como *(p.campo) porque o operador ponto (.) tem precedência maior que o asterisco (*).",
+      "gabarito": true,
+      "explicacao_passos": [
+        "Passo 1: Em C, operadores pós-fixados como . e -> têm precedência maior que operadores unários como *.",
+        "Passo 2: Logo, *p.campo tenta acessar p.campo primeiro, o que falha se p for um ponteiro.",
+        "Passo 3: Por isso devemos escrever (*p).campo ou p->campo."
+      ],
+      "ponto_chave": "Use sempre parênteses (*p).campo ou o atalho p->campo."
+    },
+    {
+      "id": "ce8",
+      "enunciado": "A função fgetc(fp) deve ter seu retorno armazenado em uma variável do tipo int, e não char, para conseguir distinguir o caractere EOF.",
+      "gabarito": true,
+      "explicacao_passos": [
+        "Passo 1: fgetc retorna o byte lido convertido para unsigned char como int (0 a 255), ou EOF (geralmente -1).",
+        "Passo 2: Se armazenado em char, um byte válido como 0xFF (255) pode ser confundido com EOF (-1) ou vice-versa.",
+        "Passo 3: Usar int c; evita encerrar a leitura antes da hora."
+      ],
+      "ponto_chave": "Guarde o retorno de fgetc() sempre em int."
+    }
+  ],
+  "simulado": [
+    {
+      "id": "s1",
+      "enunciado": "Qual trecho altera corretamente o campo 'idade' de uma struct Pessoa passada por ponteiro para a função?",
+      "codigo_opcional": "typedef struct { int idade; } Pessoa;\nvoid fazAniversario(Pessoa *p) { /* ??? */ }",
+      "alternativas": [
+        "p.idade = p.idade + 1;",
+        "p->idade = p->idade + 1;",
+        "*p.idade = *p.idade + 1;",
+        "&p->idade = p->idade + 1;"
+      ],
+      "correta": 1,
+      "explicacao_correta": "Como p é um ponteiro (Pessoa *), o operador seta (->) desreferencia p e acessa o campo idade diretamente.",
+      "por_que_outras_falham": "A usa ponto em ponteiro; C falha por precedência (*p.idade tenta *(p.idade)); D tenta atribuir valor a um endereço (&)."
+    },
+    {
+      "id": "s2",
+      "enunciado": "Você precisa acrescentar novos logs ao final de 'acessos.log' sem apagar os registros já existentes. Qual chamada de fopen usar?",
+      "codigo_opcional": "",
+      "alternativas": [
+        "fopen(\"acessos.log\", \"w\")",
+        "fopen(\"acessos.log\", \"r\")",
+        "fopen(\"acessos.log\", \"a\")",
+        "fopen(\"acessos.log\", \"w+\")"
+      ],
+      "correta": 2,
+      "explicacao_correta": "O modo \"a\" (append) preserva o conteúdo existente e grava sempre ao final do arquivo (criando-o se não existir).",
+      "por_que_outras_falham": "\"w\" e \"w+\" apagam (truncam) o arquivo ao abrir; \"r\" abre apenas para leitura e falha se o arquivo não existir."
+    },
+    {
+      "id": "s3",
+      "enunciado": "Considere o código abaixo. Qual será a saída impressa no console?",
+      "codigo_opcional": "int a = 5, b = 12;\nint *p = &a;\n*p = 8;\np = &b;\n*p = *p + a;\nprintf(\"%d %d\", a, b);",
+      "alternativas": [
+        "5 17",
+        "8 17",
+        "8 20",
+        "12 20"
+      ],
+      "correta": 2,
+      "explicacao_correta": "Primeiro p aponta para a, então *p = 8 altera a para 8. Depois p passa a apontar para b (12) e *p = *p + a faz b = 12 + 8 = 20. Resultado: 8 20.",
+      "por_que_outras_falham": "A ignora que *p = 8 mudou a; B soma a antigo (5) com 12; D confunde os valores finais de a e b."
+    },
+    {
+      "id": "s4",
+      "enunciado": "Qual verificação garante que 3 registros da struct Item foram realmente lidos de 'itens.bin'?",
+      "codigo_opcional": "Item vet[3];\nFILE *fp = fopen(\"itens.bin\", \"rb\");",
+      "alternativas": [
+        "if (fp != NULL && fread(vet, sizeof(Item), 3, fp) == 3)",
+        "if (fp != NULL && fread(vet, sizeof(Item), 3, fp) == 3 * sizeof(Item))",
+        "if (fread(vet, 1, 3, fp) == 3)",
+        "if (fopen == NULL)"
+      ],
+      "correta": 0,
+      "explicacao_correta": "Primeiro valida se fp != NULL e depois checa se fread retornou exatamente 3 (o número de elementos Item lidos).",
+      "por_que_outras_falham": "B confunde contagem de itens com total de bytes; C lê apenas 3 bytes (size=1) e não verifica fp != NULL; D compara função em vez de ponteiro."
+    },
+    {
+      "id": "s5",
+      "enunciado": "Por que Beej's Guide alerta que gravar uma struct inteira com fwrite() nem sempre é portável entre máquinas/compiladores?",
+      "codigo_opcional": "",
+      "alternativas": [
+        "Porque fwrite só aceita strings char*.",
+        "Porque o compilador pode inserir bytes de padding e arquiteturas mudam a endianness.",
+        "Porque fclose() apaga os dados se usar struct.",
+        "Porque FILE* não funciona com sizeof()."
+      ],
+      "correta": 1,
+      "explicacao_correta": "Compiladores inserem padding de alinhamento entre campos da struct, e CPUs diferentes podem usar little-endian ou big-endian.",
+      "por_que_outras_falham": "A é falso (fwrite grava qualquer bloco de bytes); C e D são tecnicamente falsos em C."
+    },
+    {
+      "id": "s6",
+      "enunciado": "Ao ler strings de um arquivo com entrada de tamanho desconhecido, qual cuidado evita buffer overflow?",
+      "codigo_opcional": "char linha[64];",
+      "alternativas": [
+        "Usar fscanf(fp, \"%s\", linha) sem limite de largura.",
+        "Usar fgets(linha, sizeof(linha), fp) informando o tamanho máximo do buffer.",
+        "Usar fwrite(linha, sizeof(linha), 1, fp) para ler.",
+        "Remover o '\\0' do final da string antes de abrir o arquivo."
+      ],
+      "correta": 1,
+      "explicacao_correta": "fgets(linha, sizeof(linha), fp) limita a leitura ao tamanho do buffer e garante o terminador '\\0' ao final.",
+      "por_que_outras_falham": "A pode invadir memória além de 64 bytes; C usa função de escrita para ler; D quebra strings C."
+    }
+  ],
+  "referencias": [
+    {
+      "titulo": "Beej's Guide to C Programming — Cap. 9: File Input/Output",
+      "url": "https://beej.us/guide/bgc/html/split/file-inputoutput.html",
+      "tipo": "Guia Técnico"
+    },
+    {
+      "titulo": "Beej's Guide to C Programming — Cap. 8: Structs",
+      "url": "https://beej.us/guide/bgc/html/split/structs.html",
+      "tipo": "Guia Técnico"
+    },
+    {
+      "titulo": "cppreference — fopen, fopen_s (<stdio.h>)",
+      "url": "https://en.cppreference.com/c/io/fopen",
+      "tipo": "Documentação Oficial C"
+    },
+    {
+      "titulo": "cppreference — fread / fwrite (<stdio.h>)",
+      "url": "https://en.cppreference.com/w/c/io/fread",
+      "tipo": "Documentação Oficial C"
+    }
+  ]
+}

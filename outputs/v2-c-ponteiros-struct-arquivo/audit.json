@@ -1,0 +1,32 @@
+{
+  "versao": "v2",
+  "tema": "Ponteiros, Struct e Arquivo em C (ATP)",
+  "rodada": 1,
+  "max_rodadas": 2,
+  "status": "APROVADO",
+  "nota_total": 94,
+  "criterios": {
+    "precisao_fontes": {
+      "nota": 24,
+      "max": 25,
+      "obs": "Fontes reais verificadas + checagem de chaves/parenteses nos snippets C."
+    },
+    "clareza_didatica": {
+      "nota": 24,
+      "max": 25,
+      "obs": "Simulador Visual de Memoria (&, *, ->) em 5 passos torna ponteiros/struct concretos."
+    },
+    "questoes_simulado": {
+      "nota": 23,
+      "max": 25,
+      "obs": "Simulado com barra de progresso, timer, validacao de pendentes, filtro de erros, refazer erradas e localStorage."
+    },
+    "interface_ux": {
+      "nota": 23,
+      "max": 25,
+      "obs": "Concordancia corrigida ('1 acerto'), Copiar codigo, Modo Escuro e Imprimir/PDF com 0 erros no console."
+    }
+  },
+  "agente_mais_fraco": "none",
+  "observacoes": "Pronta para estudo ativo; evoluiu para v3 com busca instantanea, cola fopen e mais questoes."
+}

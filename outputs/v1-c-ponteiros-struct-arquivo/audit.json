@@ -1,0 +1,36 @@
+{
+  "versao": "v1",
+  "tema": "Ponteiros, Struct e Arquivo em C (ATP)",
+  "rodada": 1,
+  "max_rodadas": 2,
+  "status": "APROVADO",
+  "nota_total": 88,
+  "criterios": {
+    "precisao_fontes": {
+      "nota": 24,
+      "max": 25,
+      "obs": "4+ fontes oficiais verificadas no navegador (Beej e cppreference); gabaritos e explicacoes 100% coerentes com dossie.md."
+    },
+    "clareza_didatica": {
+      "nota": 22,
+      "max": 25,
+      "obs": "Direto ao ponto em 4 blocos com analogias e armadilhas; falta um diagrama visual interativo de memoria/ponteiros."
+    },
+    "questoes_simulado": {
+      "nota": 22,
+      "max": 25,
+      "obs": "8 Certo/Errado passo a passo + 6 Simulado pratico; falta filtro 'Revisar apenas erradas' e progresso salvo no navegador."
+    },
+    "interface_ux": {
+      "nota": 20,
+      "max": 25,
+      "obs": "Zero erros de console, 100% responsivo em 700px (Google Sites iframe); detalhe menor de plural ('1 acertos') e ausencia de botao copiar codigo / modo escuro."
+    }
+  },
+  "agente_mais_fraco": "construtor",
+  "correcoes_sugeridas_para_v2": [
+    "Adicionar simulador interativo visual de ponteiro/memoria (passo a passo visual de &x, *ptr e seta ->).",
+    "Corrigir concordancia ('1 acerto' vs '2 acertos'), adicionar botao 'Copiar codigo' e modo escuro opcional.",
+    "No Simulado, impedir finalizar sem responder ou destacar pendentes + filtro 'Ver apenas as que errei' + salvar progresso em localStorage."
+  ]
+}
