@@ -1,9 +1,9 @@
 {
-  "version": "v4",
+  "version": "v4.1",
   "title": "Guia Mestre Interativo em C — Ponteiros, Structs e Arquivos",
-  "timestamp": "2026-11-25T00:15:34+00:00",
+  "timestamp": "2026-11-25T02:28:20+00:00",
   "status": "APPROVED",
-  "score": 99,
+  "score": 100,
   "coverage": {
     "topics_ponteiros": 18,
     "topics_structs": 18,
@@ -29,10 +29,14 @@
     "google_sites_700px_overflow_px": 0,
     "dark_mode_verified": true,
     "playground_vfs_verified": true,
+    "selftest_all_c_programs_passed": "171/171",
     "simulado_model_code_tests_passed": "18/18 (s1-q13..s3-q14)",
+    "topic_c_ast_errors": 0,
+    "unescaped_html_tags": 0,
     "screenshots": [
       "final_step_98.png",
-      "final_step_133.png"
+      "final_step_133.png",
+      "final_step_34.png"
     ]
   },
   "artifacts": [

@@ -2074,18 +2074,23 @@ const DATA = __DATA_JSON__;
         showToast("Timer Pomodoro reiniciado (25:00).");
     }
 
-    /* ==================== ENGINE C -> JS v4.0 (PONTEIROS + STRUCTS + VFS FILE *) ==================== */
+    /* ==================== ENGINE C -> JS v4.1 (PONTEIROS + STRUCTS + VFS FILE *) ==================== */
     function runCProgram(sourceCode, stdinStr) {
-        let stdout = "";
+        let __stdoutBuf = "";
         let stdinPos = 0;
         const stdinRaw = String(stdinStr || "").replace(/\r\n/g, "\n");
         const __vfs = Object.create(null);
         const __openHandles = [];
+        const stdin = { __std: "in" };
+        const stdout = { __std: "out" };
+        const stderr = { __std: "err" };
+        let errno = 0;
 
         function toCStrArr(str) {
             const arr = [];
             for (let i = 0; i < str.length; i++) arr.push(str.charCodeAt(i));
             arr.push(0);
+            arr.__elemSz = 1;
             return arr;
         }
 
@@ -2162,9 +2167,46 @@ const DATA = __DATA_JSON__;
             if (Array.isArray(p)) return __mkPtr(p, k);
             return p + k;
         }
+        function __ptrDiff(a, b) {
+            const ai = (a && a.__ptr) ? a.idx : (Array.isArray(a) ? 0 : null);
+            const bi = (b && b.__ptr) ? b.idx : (Array.isArray(b) ? 0 : null);
+            if (ai !== null && bi !== null) return ai - bi;
+            return a - b;
+        }
         function __ptrStep(p, delta) {
-            if (p && p.__ptr) { p.idx += delta; return p; }
-            return p;
+            if (p && p.__ptr) return __mkPtr(p.base, p.idx + delta);
+            if (Array.isArray(p)) return __mkPtr(p, delta);
+            return Number(p) + delta;
+        }
+        function __sizeof(v) {
+            if (v === null || v === undefined) return 4;
+            if (typeof v === "number") return 4;
+            if (typeof v === "string") return v.length + 1;
+            if (v && v.__ptr) return 8;
+            if (Array.isArray(v)) return v.length * (v.__elemSz || 4);
+            if (typeof v === "object") return 512;
+            return 4;
+        }
+        function __applyStructInit(obj, meta, initVal) {
+            if (!initVal) return obj;
+            if (Array.isArray(initVal)) {
+                for (let i = 0; i < meta.length && i < initVal.length; i++) {
+                    const f = meta[i], v = initVal[i];
+                    if (f.arr && f.isChar && typeof v === "string") writeIntoArr(obj[f.name], v);
+                    else if (f.subFn && typeof v === "object") obj[f.name] = f.subFn(v);
+                    else obj[f.name] = v;
+                }
+            } else if (typeof initVal === "object") {
+                const keys = Object.keys(initVal);
+                for (let k = 0; k < keys.length; k++) {
+                    const key = keys[k], v = initVal[key];
+                    const f = meta.find(function(x) { return x.name === key; });
+                    if (f && f.arr && f.isChar && typeof v === "string") writeIntoArr(obj[key], v);
+                    else if (f && f.subFn && typeof v === "object") obj[key] = f.subFn(v);
+                    else obj[key] = v;
+                }
+            }
+            return obj;
         }
 
         function readTokenFromStr(src, posObj) {
@@ -2200,7 +2242,7 @@ const DATA = __DATA_JSON__;
             const name = fromCStr(nameRaw);
             const mode = fromCStr(modeRaw);
             const exists = Object.prototype.hasOwnProperty.call(__vfs, name);
-            if (mode[0] === "r" && !exists) return null;
+            if (mode[0] === "r" && !exists) { errno = 2; return null; }
             if (mode[0] === "w") __vfs[name] = { bytes: [] };
             else if (!exists) __vfs[name] = { bytes: [] };
             const f = __vfs[name];
@@ -2215,6 +2257,8 @@ const DATA = __DATA_JSON__;
             return 0;
         }
         function fflush(fp) { return 0; }
+        function setvbuf() { return 0; }
+        function strerror(e) { return e ? "Arquivo nao encontrado" : "Sucesso"; }
         function feof(fp) { return (!fp || fp.eof) ? 1 : 0; }
         function ferror(fp) { return (!fp || fp.err) ? 1 : 0; }
         function clearerr(fp) { if (fp) { fp.eof = false; fp.err = false; } }
@@ -2248,18 +2292,21 @@ const DATA = __DATA_JSON__;
             return fopen(tmpName, "w+b");
         }
         function fputc(ch, fp) {
-            if (!fp) return -1;
             const code = typeof ch === "number" ? (ch & 255) : String(ch).charCodeAt(0);
+            if (fp && (fp.__std === "out" || fp.__std === "err")) { __stdoutBuf += String.fromCharCode(code); return code; }
+            if (!fp || !fp.file) return -1;
             fp.file.bytes[fp.pos++] = code;
             return code;
         }
         function fputs(s, fp) {
             const txt = fromCStr(s);
+            if (fp && (fp.__std === "out" || fp.__std === "err")) { __stdoutBuf += txt; return 0; }
             for (let i = 0; i < txt.length; i++) fputc(txt.charCodeAt(i), fp);
             return 0;
         }
         function fgetc(fp) {
-            if (!fp || fp.pos >= fp.file.bytes.length) {
+            if (fp && fp.__std === "in") return getchar();
+            if (!fp || !fp.file || fp.pos >= fp.file.bytes.length) {
                 if (fp) fp.eof = true;
                 return -1;
             }
@@ -2271,19 +2318,21 @@ const DATA = __DATA_JSON__;
             for (let i = 0; i < f.length; i++) {
                 if (f[i] === "%" && i + 1 < f.length) {
                     if (f[i + 1] === "%") { res += "%"; i++; continue; }
-                    const m = f.slice(i).match(/^%(-?\d+)?(?:\.(\d+))?(?:l|ll|h)?([dfsxcup])/);
+                    const m = f.slice(i).match(/^%(-?\d+)?(?:\.(\d+))?(?:ll|hh|l|h|z|t|j)?([dfsxcupigeXo])/);
                     if (m) {
                         const width = m[1] ? parseInt(m[1], 10) : 0;
                         const prec = m[2] !== undefined ? parseInt(m[2], 10) : null;
                         const spec = m[3];
                         const v = args[argIdx++];
                         let s = "";
-                        if (spec === "d" || spec === "u") s = String(Math.trunc(Number(v) || 0));
-                        else if (spec === "f") s = (Number(v) || 0).toFixed(prec !== null ? prec : 6);
+                        if (spec === "d" || spec === "i" || spec === "u") s = String(Math.trunc(Number(v) || 0));
+                        else if (spec === "f" || spec === "g" || spec === "e") s = (Number(v) || 0).toFixed(prec !== null ? prec : (spec === "g" ? 2 : 6));
                         else if (spec === "s") s = fromCStr(v);
                         else if (spec === "c") s = String.fromCharCode(typeof v === "number" ? v : String(v).charCodeAt(0));
                         else if (spec === "x") s = (Math.trunc(Number(v) || 0) >>> 0).toString(16);
-                        else if (spec === "p") s = v === null ? "0x0" : "0x1000";
+                        else if (spec === "X") s = (Math.trunc(Number(v) || 0) >>> 0).toString(16).toUpperCase();
+                        else if (spec === "o") s = (Math.trunc(Number(v) || 0) >>> 0).toString(8);
+                        else if (spec === "p") s = (v === null || v === undefined) ? "0x0" : ("0x" + (0x1000 + ((v.__ptr ? v.idx * 4 : 0))).toString(16).toUpperCase());
                         if (width > 0 && s.length < width) s = " ".repeat(width - s.length) + s;
                         else if (width < 0 && s.length < -width) s = s + " ".repeat(-width - s.length);
                         res += s;
@@ -2295,15 +2344,21 @@ const DATA = __DATA_JSON__;
             }
             return res;
         }
-        function printf(fmt) { stdout += __formatPrintf(fromCStr(fmt), arguments, 1); }
+        function printf(fmt) { __stdoutBuf += __formatPrintf(fromCStr(fmt), arguments, 1); }
         function fprintf(fp, fmt) {
             const text = __formatPrintf(fromCStr(fmt), arguments, 2);
+            if (fp && (fp.__std === "out" || fp.__std === "err")) { __stdoutBuf += text; return text.length; }
             for (let i = 0; i < text.length; i++) fputc(text.charCodeAt(i), fp);
             return text.length;
         }
         function sprintf(dest, fmt) {
             const text = __formatPrintf(fromCStr(fmt), arguments, 2);
             writeIntoArr(dest, text);
+            return text.length;
+        }
+        function snprintf(dest, maxN, fmt) {
+            const text = __formatPrintf(fromCStr(fmt), arguments, 3);
+            writeIntoArr(dest, text.slice(0, Math.max(0, (maxN || 100) - 1)));
             return text.length;
         }
         function fgets(dest, maxN, stream) {
@@ -2331,9 +2386,9 @@ const DATA = __DATA_JSON__;
             return dest;
         }
         function getchar() { return stdinPos >= stdinRaw.length ? -1 : stdinRaw.charCodeAt(stdinPos++); }
-        function putchar(c) { stdout += String.fromCharCode(typeof c === "number" ? c : String(c).charCodeAt(0)); }
-        function puts(s) { stdout += fromCStr(s) + "\n"; }
-        function perror(msg) { stdout += fromCStr(msg) + ": Error\n"; }
+        function putchar(c) { __stdoutBuf += String.fromCharCode(typeof c === "number" ? c : String(c).charCodeAt(0)); }
+        function puts(s) { __stdoutBuf += fromCStr(s) + "\n"; }
+        function perror(msg) { __stdoutBuf += fromCStr(msg) + ": " + strerror(errno || 2) + "\n"; }
 
         // Binary serialization helper for structs/arrays into VFS bytes
         function __serializeItem(val, elemSize) {
@@ -2462,15 +2517,21 @@ const DATA = __DATA_JSON__;
             for (let i = 0; i < n; i++) arr[i] = sub[i];
         }
 
-        function __arr1d(n, init) {
+        function __arr1d(n, init, elemSz) {
             const a = new Array(Math.max(1, n || 64)).fill(0);
+            a.__elemSz = elemSz || (typeof init === "string" ? 1 : 4);
             if (Array.isArray(init)) for (let i = 0; i < init.length; i++) a[i] = init[i];
             else if (typeof init === "string") writeIntoArr(a, init);
             return a;
         }
-        function __arr2d(r, c) {
+        function __arr2d(r, c, initRows) {
             const a = new Array(Math.max(1, r || 20));
-            for (let i = 0; i < a.length; i++) a[i] = new Array(Math.max(1, c || 20)).fill(0);
+            for (let i = 0; i < a.length; i++) {
+                a[i] = new Array(Math.max(1, c || 20)).fill(0);
+                if (initRows && Array.isArray(initRows[i])) {
+                    for (let j = 0; j < initRows[i].length; j++) a[i][j] = initRows[i][j];
+                }
+            }
             return a;
         }
         function __fReadToken(fp) {
@@ -2487,6 +2548,9 @@ const DATA = __DATA_JSON__;
         function __fReadInt(fp) { const t = __fReadToken(fp); return t === null ? null : parseInt(t, 10); }
         function __fReadFloat(fp) { const t = __fReadToken(fp); return t === null ? null : parseFloat(t); }
         function __fReadStr(fp, dest) { const t = __fReadToken(fp); if (t === null) return 0; writeIntoArr(dest, t); return 1; }
+        function __sReadInt(posObj, s) { const t = readTokenFromStr(s, posObj); return t === null ? null : parseInt(t, 10); }
+        function __sReadFloat(posObj, s) { const t = readTokenFromStr(s, posObj); return t === null ? null : parseFloat(t); }
+        function __sReadStr(posObj, s, dest) { const t = readTokenFromStr(s, posObj); if (t === null) return 0; writeIntoArr(dest, t); return 1; }
 
         function __transpileC(raw) {
             let s = raw;
@@ -2509,10 +2573,20 @@ const DATA = __DATA_JSON__;
             });
             s = s.replace(/^\s*#include[^\n]*$/gm, "");
             s = s.replace(/^\s*#define\s+([A-Za-z_]\w*)\s+([^\n]+)$/gm, "const $1 = $2;");
-            s = s.replace(/\bSEEK_SET\b/g, "0").replace(/\bSEEK_CUR\b/g, "1").replace(/\bSEEK_END\b/g, "2").replace(/\bEOF\b/g, "-1").replace(/\bNULL\b/g, "null");
+            s = s.replace(/\bSEEK_SET\b/g, "0").replace(/\bSEEK_CUR\b/g, "1").replace(/\bSEEK_END\b/g, "2")
+                 .replace(/\bEOF\b/g, "-1").replace(/\bNULL\b/g, "null")
+                 .replace(/\bEXIT_SUCCESS\b/g, "0").replace(/\bEXIT_FAILURE\b/g, "1")
+                 .replace(/\bBUFSIZ\b/g, "512").replace(/\b_IOFBF\b/g, "0").replace(/\b_IOLBF\b/g, "1").replace(/\b_IONBF\b/g, "2");
+            // Strip C numeric suffixes (e.g., 1.65f, 7.0f, 10UL, 0L)
+            s = s.replace(/\b(\d+(?:\.\d+)?)[fFlLuU]+\b/g, "$1");
+            // Rename C identifier 'in' (reserved JS keyword) safely outside member access
+            s = s.replace(/(?<![.\w>])\bin\b(?!\s*:)/g, "__c_in");
 
-            // Enums
-            s = s.replace(/\b(?:typedef\s+)?enum(?:\s+[A-Za-z_]\w*)?\s*\{([^}]*)\}\s*([A-Za-z_]\w*)?\s*;/g, function(_, body) {
+            // Enum definitions (also track enum type names)
+            const enumNames = [];
+            s = s.replace(/\b(?:typedef\s+)?enum(?:\s+([A-Za-z_]\w*))?\s*\{([^}]*)\}\s*([A-Za-z_]\w*)?\s*;/g, function(_, tag, body, alias) {
+                if (tag && enumNames.indexOf(tag) === -1) enumNames.push(tag);
+                if (alias && enumNames.indexOf(alias) === -1) enumNames.push(alias);
                 let nextVal = 0;
                 const items = body.split(",").map(function(x) { return x.trim(); }).filter(Boolean);
                 return items.map(function(it) {
@@ -2525,47 +2599,102 @@ const DATA = __DATA_JSON__;
                 }).join(" ");
             });
 
-            // Collect struct/union definitions and emit factory functions
+            function __splitTopArgs(str) {
+                const out = [];
+                let cur = "", dP = 0, dB = 0, dK = 0;
+                for (let i = 0; i < str.length; i++) {
+                    const ch = str[i];
+                    if (ch === "(") dP++; else if (ch === ")") dP--;
+                    else if (ch === "{") dB++; else if (ch === "}") dB--;
+                    else if (ch === "[") dK++; else if (ch === "]") dK--;
+                    if (ch === "," && dP === 0 && dB === 0 && dK === 0) { out.push(cur.trim()); cur = ""; }
+                    else cur += ch;
+                }
+                if (cur.trim()) out.push(cur.trim());
+                return out;
+            }
+
+            // Collect struct/union definitions (including nested anonymous structs/unions inside structs!)
             const structNames = [];
             const structFactories = [];
+            let __anonIdx = 0;
             function parseStructBody(body) {
                 const fields = [];
                 const stmts = body.split(";").map(function(x) { return x.trim(); }).filter(Boolean);
                 for (let i = 0; i < stmts.length; i++) {
-                    const mArr = stmts[i].match(/([A-Za-z_]\w*)\s*\[([^\]]+)\]$/);
+                    let st = stmts[i].replace(/\s*:\s*\d+\s*$/, "").trim(); // strip bit-fields
+                    const mArr = st.match(/([A-Za-z_]\w*)\s*\[([^\]]+)\]$/);
                     if (mArr) {
-                        const isChar = /\bchar\b/.test(stmts[i]);
-                        fields.push({ name: mArr[1], arr: mArr[2], isChar: isChar });
+                        const isChar = /\bchar\b/.test(st);
+                        fields.push({ name: mArr[1], arr: mArr[2], isChar: isChar, subType: null });
                     } else {
-                        const parts = stmts[i].replace(/^.*\b(?:int|float|double|char|long|size_t|struct\s+\w+|[A-Z]\w*)\s*\*?\s*/, "").split(",");
+                        let subType = null;
+                        for (let si = 0; si < structNames.length; si++) {
+                            if (new RegExp("^\\s*(?:struct|union)?\\s*" + structNames[si] + "\\b").test(st) && st.indexOf("*") === -1) {
+                                subType = structNames[si];
+                                break;
+                            }
+                        }
+                        const cleaned = st.replace(/^\s*(?:(?:const|unsigned|signed)\s+|(?:struct|union|enum)\s+\w+\s+|[A-Za-z_]\w*\s+(?=[A-Za-z_*]))+/, "");
+                        const parts = cleaned.split(",");
                         for (let p = 0; p < parts.length; p++) {
                             const fn = parts[p].replace(/\*/g, "").trim();
-                            if (/^[A-Za-z_]\w*$/.test(fn)) fields.push({ name: fn, arr: null });
+                            if (/^[A-Za-z_]\w*$/.test(fn)) fields.push({ name: fn, arr: null, isChar: false, subType: subType });
                         }
                     }
                 }
                 return fields;
             }
-            s = s.replace(/\btypedef\s+(?:struct|union)(?:\s+([A-Za-z_]\w*))?\s*\{([^}]*)\}\s*([A-Za-z_]\w*)\s*;/g, function(_, tag, body, alias) {
+            function registerStructDef(tag, body, alias) {
+                const name = alias || tag;
                 const fields = parseStructBody(body);
-                structNames.push(alias);
-                if (tag) structNames.push(tag);
+                if (alias && structNames.indexOf(alias) === -1) structNames.push(alias);
+                if (tag && structNames.indexOf(tag) === -1) structNames.push(tag);
+                const metaArr = "[" + fields.map(function(f) {
+                    return "{ name: '" + f.name + "', arr: " + (f.arr ? "true" : "false") + ", isChar: " + (f.isChar ? "true" : "false") + ", subFn: " + (f.subType ? "__make_" + f.subType : "null") + " }";
+                }).join(", ") + "]";
                 const props = fields.map(function(f) {
-                    return f.name + ": " + (f.arr ? "__arr1d(" + f.arr + ")" : "0");
+                    if (f.arr) return f.name + ": __arr1d(" + f.arr + ", null, " + (f.isChar ? 1 : 4) + ")";
+                    if (f.subType) return f.name + ": __make_" + f.subType + "()";
+                    return f.name + ": 0";
                 }).join(", ");
-                structFactories.push("function __make_" + alias + "() { return { " + props + " }; }");
-                if (tag) structFactories.push("function __make_" + tag + "() { return __make_" + alias + "(); }");
+                structFactories.push("function __make_" + name + "(initVal) { const obj = { " + props + " }; return __applyStructInit(obj, " + metaArr + ", initVal); }");
+                if (tag && alias && tag !== alias) {
+                    structFactories.push("function __make_" + tag + "(initVal) { return __make_" + alias + "(initVal); }");
+                }
+            }
+            // Extract ONLY inner anonymous struct/union blocks inside an outer struct/union (brace depth >= 1)
+            for (let pass = 0; pass < 4; pass++) {
+                const before = s;
+                s = s.replace(/\b(struct|union)(?:\s+[A-Za-z_]\w*)?\s*\{([^{}]*)\}\s*([A-Za-z_]\w*)\s*;/g, function(full, kw, body, varName, offset, fullStr) {
+                    const prefix = fullStr.slice(0, offset);
+                    const depth = (prefix.match(/\{/g) || []).length - (prefix.match(/\}/g) || []).length;
+                    if (depth < 1) return full;
+                    const anonName = "__Anon" + (++__anonIdx);
+                    registerStructDef(null, body, anonName);
+                    return anonName + " " + varName + ";";
+                });
+                if (s === before) break;
+            }
+            s = s.replace(/\btypedef\s+(?:struct|union)(?:\s+([A-Za-z_]\w*))?\s*\{([^{}]*)\}\s*([A-Za-z_]\w*)\s*;/g, function(_, tag, body, alias) {
+                registerStructDef(tag, body, alias);
                 return "";
             });
-            s = s.replace(/\b(?:struct|union)\s+([A-Za-z_]\w*)\s*\{([^}]*)\}\s*;/g, function(_, tag, body) {
-                const fields = parseStructBody(body);
-                structNames.push(tag);
-                const props = fields.map(function(f) {
-                    return f.name + ": " + (f.arr ? "__arr1d(" + f.arr + ")" : "0");
-                }).join(", ");
-                structFactories.push("function __make_" + tag + "() { return { " + props + " }; }");
+            s = s.replace(/\b(?:struct|union)\s+([A-Za-z_]\w*)\s*\{([^{}]*)\}\s*;/g, function(_, tag, body) {
+                registerStructDef(tag, body, null);
                 return "";
             });
+
+            // Convert C99 compound literals: (StructName){ ... } BEFORE cast removal!
+            if (structNames.length > 0) {
+                const clRe = new RegExp("\\(\\s*(?:struct\\s+)?(" + structNames.join("|") + ")\\s*\\)\\s*\\{([^{}]*)\\}", "g");
+                s = s.replace(clRe, function(_, stType, inner) {
+                    const fBody = inner.replace(/\.\s*([A-Za-z_]\w*)\s*=/g, "$1:");
+                    if (fBody.indexOf(":") !== -1) return "__make_" + stType + "({" + fBody + "})";
+                    return "__make_" + stType + "([" + fBody + "])";
+                });
+            }
+
             // Handle malloc/calloc/realloc with sizeof(StructName) before turning sizeof into bytes
             structNames.forEach(function(sn) {
                 const szRe = new RegExp("\\bsizeof\\s*\\(\\s*(?:struct\\s+)?" + sn + "\\s*\\)");
@@ -2580,140 +2709,226 @@ const DATA = __DATA_JSON__;
                 });
             });
 
-            // Handle sizeof(Type) before removing casts
-            s = s.replace(/\bsizeof\s*\(\s*(?:struct\s+)?([A-Za-z_]\w*)\s*\*?\s*\)/g, function(_, t) {
+            // Handle sizeof(*ptr) / sizeof(Type) before removing casts, and convert remaining sizeof(expr) to __sizeof(expr)
+            s = s.replace(/\bsizeof\s*\(\s*\*+[^()]+\)/g, "4");
+            s = s.replace(/\bsizeof\s*\(\s*(?:(?:struct|union|enum)\s+)?([A-Za-z_]\w*)\s*(\*+)?\s*\)/g, function(_, t, ptr) {
+                if (ptr) return "8";
                 if (t === "char") return "1";
                 if (t === "int" || t === "float") return "4";
                 if (t === "double" || t === "long") return "8";
                 if (structNames.indexOf(t) !== -1) return "512";
-                return "4";
+                if (enumNames.indexOf(t) !== -1) return "4";
+                return "__sizeof(" + t + ")";
             });
+            s = s.replace(/\bsizeof\s*\(([^()]+)\)/g, "__sizeof($1)");
             s = s.replace(/\bremove\s*\(/g, "removeFile(").replace(/\brename\s*\(/g, "renameFile(");
 
-            // Replace casts including pointer casts & struct casts
-            s = s.replace(/\(\s*(?:const\s+|unsigned\s+|struct\s+)?[A-Za-z_]\w*\s*\*?\s*\)\s*(?=[A-Za-z_(0-9])/g, "");
+            // Replace known C casts safely without touching (op)(3, 4) or (turma + i), including (void *)&x
+            const knownTypesList = ["void", "int", "float", "double", "char", "long", "short", "size_t", "ptrdiff_t", "bool", "_Bool", "FILE"].concat(structNames).concat(enumNames);
+            const castRe = new RegExp("\\(\\s*(?:const\\s+|unsigned\\s+|signed\\s+|struct\\s+|union\\s+|enum\\s+)*(?:" + knownTypesList.join("|") + ")(?:\\s+(?:const|unsigned|signed))*(?:\\s*\\*+)?\\s*\\)\\s*(?=[A-Za-z_(0-9&*+\\-])", "g");
+            s = s.replace(castRe, "");
 
-            // Prototypes
-            const typeUnion = "(?:const\\s+)?(?:unsigned\\s+)?(?:void|int|float|double|char|long|size_t|FILE|(?:struct\\s+)?[A-Za-z_]\\w*)";
-            s = s.replace(new RegExp("^\\s*" + typeUnion + "\\s*\\*?\\*?\\s+[A-Za-z_]\\w*\\s*\\([^;{}]*\\)\\s*;", "gm"), "");
+            // Strict C type pattern (NEVER matches control keywords like 'else')
+            const extraTypes = structNames.concat(enumNames);
+            const extraAlt = extraTypes.length ? ("|" + extraTypes.join("|")) : "";
+            const cBuiltinType = "(?:(?:const\\s+|unsigned\\s+|signed\\s+)*(?:void|int|float|double|char|long|short|size_t|ptrdiff_t|bool|_Bool|FILE|(?:struct|union|enum)\\s+[A-Za-z_]\\w*" + extraAlt + "))";
+            s = s.replace(new RegExp("\\b" + cBuiltinType + "\\s*\\(\\s*\\*\\s*([A-Za-z_]\\w*)\\s*\\)\\s*\\([^)]*\\)\\s*=\\s*([^;]+);", "g"), "let $1 = $2;");
 
-            // Function signatures
-            s = s.replace(new RegExp("\\b" + typeUnion + "\\s*\\*?\\*?\\s+([A-Za-z_]\\w*)\\s*\\(([^)]*)\\)\\s*\\{", "g"), function(_, fnName, params) {
+            // Prototypes (supports *cria, **alocar_matriz, and nested fn ptr/array params)
+            s = s.replace(new RegExp("^\\s*" + cBuiltinType + "(?:\\s+|\\s*\\*+\\s*)([A-Za-z_]\\w*)\\s*\\((?:[^()]|\\([^()]*\\))*\\)\\s*;", "gm"), "");
+
+            // Track pointer variables (including pointer params and locals!)
+            const ptrVars = new Set();
+            function addPtrVar(nm) { if (nm && /^[A-Za-z_]\w*$/.test(nm)) ptrVars.add(nm); }
+            // Function definitions (supports *cria, **alocar_matriz, int (*m)[3], callbacks)
+            s = s.replace(new RegExp("\\b" + cBuiltinType + "(?:\\s+|\\s*\\*+\\s*)([A-Za-z_]\\w*)\\s*\\(((?:[^()]|\\([^()]*\\))*)\\)\\s*\\{", "g"), function(_, fnName, params) {
                 const pClean = params.trim() === "void" || params.trim() === "" ? "" :
                     params.split(",").map(function(p) {
-                        const m = p.replace(/\[[^\]]*\]/g, "").trim().match(/([A-Za-z_]\w*)$/);
+                        const tp = p.trim();
+                        const mFnPtr = tp.match(/\(\s*\*\s*([A-Za-z_]\w*)\s*\)/);
+                        if (mFnPtr) return mFnPtr[1];
+                        const m = tp.replace(/\[[^\]]*\]/g, "").trim().match(/([A-Za-z_]\w*)$/);
+                        if (m && tp.indexOf("*") !== -1 && tp.indexOf("(*") === -1) addPtrVar(m[1]);
                         return m ? m[1] : "";
                     }).filter(Boolean).join(", ");
                 return "function " + fnName + "(" + pClean + ") {";
             });
 
-            function __splitTopArgs(str) {
-                const out = [];
-                let cur = "", d = 0;
-                for (let i = 0; i < str.length; i++) {
-                    const ch = str[i];
-                    if (ch === "(") d++; else if (ch === ")") d--;
-                    if (ch === "," && d === 0) { out.push(cur.trim()); cur = ""; }
-                    else cur += ch;
-                }
-                if (cur.trim()) out.push(cur.trim());
-                return out;
-            }
-
-            // Track struct variable names (already JS objects, never scalar-boxed)
+            // Track struct variable names (non-pointer struct values & arrays)
             const structVars = new Set();
             if (structNames.length > 0) {
-                const svRe = new RegExp("\\b(?:struct\\s+)?(?:" + structNames.join("|") + ")\\s+(\\*?[^;]+);", "g");
+                const svRe = new RegExp("\\b(?:struct\\s+|union\\s+)?(?:" + structNames.join("|") + ")\\s+([^;{}]+);", "g");
                 let m;
                 while ((m = svRe.exec(s)) !== null) {
                     __splitTopArgs(m[1]).forEach(function(item) {
-                        const nm = item.replace(/^\*+\s*/, "").split(/[=\[]/)[0].trim();
-                        if (/^[A-Za-z_]\w*$/.test(nm)) structVars.add(nm);
+                        const isPtr = /^\*/.test(item.trim());
+                        const nm = item.replace(/^\*+\s*(?:const\s+)?/, "").split(/[=\[]/)[0].trim();
+                        if (/^[A-Za-z_]\w*$/.test(nm)) {
+                            if (isPtr) addPtrVar(nm);
+                            else structVars.add(nm);
+                        }
                     });
                 }
             }
 
-            // Detect scalar variables whose address &x is passed outside scanf/fscanf/fwrite/fread/sscanf
-            const addrVars = new Set();
-            const safeCallMasks = s.replace(/\b(?:scanf|fscanf|fwrite|fread|sscanf)\s*\((?:[^()]|\([^()]*\))*\)/g, " ");
-            const ampMatches = safeCallMasks.match(/&\s*([A-Za-z_]\w*)(?!\s*\[|\s*\.)/g) || [];
-            for (let i = 0; i < ampMatches.length; i++) {
-                const vn = ampMatches[i].replace(/^&\s*/, "");
-                if (!structVars.has(vn)) addrVars.add(vn);
+            // Track array variable names so &v[0] -> __mkPtr(v, 0) and arrays are never scalar-boxed
+            const arrVars = new Set();
+            {
+                const arRe = new RegExp("\\b" + cBuiltinType + "\\s+([^;{}]+);", "g");
+                let m;
+                while ((m = arRe.exec(s)) !== null) {
+                    __splitTopArgs(m[1]).forEach(function(item) {
+                        const t = item.trim();
+                        const mAr = t.match(/^([A-Za-z_]\w*)\s*\[/);
+                        if (mAr && /^[A-Za-z_]\w*$/.test(mAr[1])) arrVars.add(mAr[1]);
+                        else if (/^\*/.test(t)) {
+                            const pn = t.replace(/^\*+\s*(?:const\s+)?/, "").split("=")[0].trim();
+                            addPtrVar(pn);
+                        }
+                    });
+                }
             }
 
-            // for (int i = ...)
-            s = s.replace(/\bfor\s*\(\s*(?:int|size_t|long|char)\s+/g, "for (let ");
-            // 2D arrays
-            s = s.replace(/\b(?:int|float|double|char|long)\s+([A-Za-z_]\w*)\s*\[([^\]]+)\]\s*\[([^\]]+)\]\s*;/g, "let $1 = __arr2d($2, $3);");
+            // Detect scalar/pointer variables whose &x is passed outside scanf/fscanf/sscanf/fwrite/fread (NOT && !)
+            const addrVars = new Set();
+            const safeCallMasks = s.replace(/\b(?:scanf|fscanf|fwrite|fread|sscanf)\s*\((?:[^()]|\([^()]*\))*\)/g, " ");
+            const ampRe = /(?:^|[^&])&\s*([A-Za-z_]\w*)(?!\s*\[|\s*\.)/g;
+            let ampM;
+            while ((ampM = ampRe.exec(safeCallMasks)) !== null) {
+                const vn = ampM[1];
+                if (!structVars.has(vn) && !arrVars.has(vn)) addrVars.add(vn);
+            }
 
-            // Struct variable declarations
+            // for (Type *cur = ...; ...) and for (int i = ...; ...)
             if (structNames.length > 0) {
-                const stRegex = new RegExp("\\b(?:struct\\s+)?(" + structNames.join("|") + ")\\s+(\\*?[^;]+);", "g");
+                s = s.replace(new RegExp("\\bfor\\s*\\(\\s*(?:struct\\s+)?(?:" + structNames.join("|") + ")\\s*\\*?\\s*", "g"), "for (let ");
+            }
+            s = s.replace(new RegExp("\\bfor\\s*\\(\\s*" + cBuiltinType + "\\s*\\*?\\s*", "g"), "for (let ");
+
+            // 2D arrays with optional initializer ({{1,2},{3,4}} or {0})
+            s = s.replace(new RegExp("\\b" + cBuiltinType + "\\s+([A-Za-z_]\\w*)\\s*\\[([^\\]]+)\\]\\s*\\[([^\\]]+)\\]\\s*=\\s*\\{((?:[^{}]|\\{[^{}]*\\})*)\\}\\s*;", "g"), function(_, name, r, c, initInner) {
+                if (initInner.indexOf("{") !== -1) {
+                    const jsRows = initInner.replace(/\{([^{}]*)\}/g, "[$1]");
+                    return "let " + name + " = __arr2d(" + r + ", " + c + ", [" + jsRows + "]);";
+                }
+                return "let " + name + " = __arr2d(" + r + ", " + c + ");";
+            });
+            s = s.replace(new RegExp("\\b" + cBuiltinType + "\\s+([A-Za-z_]\\w*)\\s*\\[([^\\]]+)\\]\\s*\\[([^\\]]+)\\]\\s*;", "g"), "let $1 = __arr2d($2, $3);");
+
+            // Struct variable declarations (including nested/positional/designated init & struct arrays)
+            if (structNames.length > 0) {
+                const stRegex = new RegExp("\\b(?:struct\\s+|union\\s+)?(" + structNames.join("|") + ")\\s+([^;]+);", "g");
                 s = s.replace(stRegex, function(_, stType, declList) {
                     const parts = __splitTopArgs(declList);
-                    return "let " + parts.map(function(p) {
-                        const cleanP = p.replace(/^\*+\s*/, "");
+                    return parts.map(function(p) {
+                        const isPtrDecl = /^\s*\*/.test(p);
+                        const cleanP = p.replace(/^\*+\s*(?:const\s+)?/, "").trim();
+                        if (isPtrDecl) addPtrVar(cleanP.split("=")[0].trim());
+                        const mArrInit = cleanP.match(/^([A-Za-z_]\w*)\s*\[([^\]]*)\]\s*=\s*\{([\s\S]*)\}$/);
+                        if (mArrInit) {
+                            const items = __splitTopArgs(mArrInit[3]).map(function(it) {
+                                const inBody = it.trim().replace(/^\{|\}$/g, "").replace(/\.\s*([A-Za-z_]\w*)\s*=/g, "$1:");
+                                if (inBody.indexOf(":") !== -1) return "__make_" + stType + "({" + inBody + "})";
+                                return "__make_" + stType + "([" + inBody + "])";
+                            });
+                            return "let " + mArrInit[1] + " = [" + items.join(", ") + "];";
+                        }
                         const mArr = cleanP.match(/^([A-Za-z_]\w*)\s*\[([^\]]+)\]$/);
-                        if (mArr) return mArr[1] + " = Array.from({length:" + mArr[2] + "}, function(){ return __make_" + stType + "(); })";
-                        const mInit = cleanP.match(/^([A-Za-z_]\w*)\s*=\s*\{([^}]*)\}$/);
+                        if (mArr) return "let " + mArr[1] + " = Array.from({length:" + mArr[2] + "}, function(){ return __make_" + stType + "(); });";
+                        const mInit = cleanP.match(/^([A-Za-z_]\w*)\s*=\s*\{([\s\S]*)\}$/);
                         if (mInit) {
                             const fieldsBody = mInit[2].replace(/\.\s*([A-Za-z_]\w*)\s*=/g, "$1:");
                             if (fieldsBody.indexOf(":") !== -1) {
-                                return mInit[1] + " = Object.assign(__make_" + stType + "(), {" + fieldsBody + "})";
+                                return "let " + mInit[1] + " = __make_" + stType + "({" + fieldsBody + "});";
                             }
-                            return mInit[1] + " = __make_" + stType + "()";
+                            const posBody = fieldsBody.replace(/\{([^{}:]*)\}/g, "[$1]");
+                            return "let " + mInit[1] + " = __make_" + stType + "([" + posBody + "]);";
                         }
-                        if (cleanP.indexOf("=") !== -1) return cleanP;
-                        return cleanP + " = __make_" + stType + "()";
-                    }).join(", ") + ";";
+                        if (cleanP.indexOf("=") !== -1) {
+                            let rhs = cleanP.slice(cleanP.indexOf("=") + 1).trim();
+                            const lhs = cleanP.slice(0, cleanP.indexOf("=")).trim();
+                            if (isPtrDecl && rhs.indexOf("malloc(") !== -1 && rhs.indexOf("__make_") === -1) {
+                                rhs = rhs.replace(/malloc\(([^)]+)\)/, "malloc(512, __make_" + stType + ")");
+                            }
+                            if (isPtrDecl && addrVars.has(lhs)) return "let __box_" + lhs + " = [" + rhs + "];";
+                            return "let " + lhs + " = " + rhs + ";";
+                        }
+                        if (isPtrDecl && addrVars.has(cleanP)) return "let __box_" + cleanP + " = [null];";
+                        return "let " + cleanP + " = " + (isPtrDecl ? "null" : ("__make_" + stType + "()")) + ";";
+                    }).join(" ");
                 });
             }
 
-            // Standard scalar/1D/pointer declarations (box addrVars directly!)
-            s = s.replace(/\b(?:const\s+)?(?:unsigned\s+)?(?:int|float|double|char|long|size_t|FILE)\s+([^;]+);/g, function(_, declList) {
-                const parts = [];
-                let cur = "", dP = 0, dB = 0;
-                for (let i = 0; i < declList.length; i++) {
-                    const ch = declList[i];
-                    if (ch === "(") dP++; else if (ch === ")") dP--;
-                    else if (ch === "{") dB++; else if (ch === "}") dB--;
-                    if (ch === "," && dP === 0 && dB === 0) { parts.push(cur.trim()); cur = ""; }
-                    else cur += ch;
-                }
-                if (cur.trim()) parts.push(cur.trim());
+            // Standard scalar/1D/pointer declarations (now includes void * and enum types!)
+            const scalarDeclAlt = enumNames.length ? ("|" + enumNames.join("|")) : "";
+            s = s.replace(new RegExp("\\b(?:const\\s+)?(?:unsigned\\s+|signed\\s+)?(?:void|int|float|double|char|long|short|size_t|ptrdiff_t|bool|_Bool|FILE" + scalarDeclAlt + ")\\s+([^;]+);", "g"), function(_, declList) {
+                const parts = __splitTopArgs(declList);
                 return parts.map(function(p) {
-                    const isPtrDecl = /^\s*\*/.test(p);
-                    const cp = p.replace(/^\*+\s*/, "");
+                    const isPtrDecl = /^\s*\*+/.test(p);
+                    const cp = p.replace(/^\*+\s*(?:const\s+)?/, "").trim();
                     let m = cp.match(/^([A-Za-z_]\w*)\s*\[([^\]]*)\]\s*=\s*\{([^}]*)\}$/);
                     if (m) return "let " + m[1] + " = __arr1d(" + (m[2] || "64") + ", [" + m[3] + "]);";
                     m = cp.match(/^([A-Za-z_]\w*)\s*\[([^\]]*)\]\s*=\s*(@@STR\d+@@)$/);
-                    if (m) return "let " + m[1] + " = __arr1d(" + (m[2] || "64") + ", " + m[3] + ");";
+                    if (m) return "let " + m[1] + " = __arr1d(" + (m[2] || "64") + ", " + m[3] + ", 1);";
                     m = cp.match(/^([A-Za-z_]\w*)\s*\[([^\]]*)\]$/);
                     if (m) return "let " + m[1] + " = __arr1d(" + (m[2] || "64") + ");";
                     const eqIdx = cp.indexOf("=");
                     const vName = (eqIdx !== -1 ? cp.slice(0, eqIdx) : cp).trim();
-                    const vInit = eqIdx !== -1 ? cp.slice(eqIdx + 1).trim() : "0";
-                    if (!isPtrDecl && addrVars.has(vName)) {
+                    let vInit = eqIdx !== -1 ? cp.slice(eqIdx + 1).trim() : (isPtrDecl ? "null" : "0");
+                    if (isPtrDecl) {
+                        addPtrVar(vName);
+                        if (/^@@STR\d+@@$/.test(vInit)) vInit = "__mkPtr(toCStrArr(" + vInit + "), 0)";
+                        else if (arrVars.has(vInit)) vInit = "__mkPtr(" + vInit + ", 0)";
+                    }
+                    if (addrVars.has(vName)) {
                         return "let __box_" + vName + " = [" + vInit + "];";
                     }
                     return "let " + vName + " = " + vInit + ";";
                 }).join(" ");
             });
 
-            // Struct & Pointer operators: p->campo -> p.campo, (ptr + off).campo -> __ptrAdd(ptr, off).campo
+            // Simplify *(&x) and *&x before pointer/deref passes
+            s = s.replace(/\*\s*\(\s*&\s*([A-Za-z_]\w*)\s*\)/g, "$1").replace(/\*&\s*([A-Za-z_]\w*)/g, "$1");
+            // Convert &arr[idx] -> __mkPtr(arr, idx) (ignore && !)
+            s = s.replace(/(^|[^&])&\s*([A-Za-z_]\w*)\s*\[([^\]]+)\]/g, "$1__mkPtr($2, $3)");
+
+            // Struct & Pointer operators
             s = s.replace(/->/g, ".");
             s = s.replace(/\(\s*([A-Za-z_]\w*)\s*\+\s*([^()]+)\)\s*\./g, "__ptrAdd($1, $2).");
-            // Rewrite *p += expr;, *p = expr;, (*p)++, and *(ptr + idx)
+
+            // Double pointers & 2D array pointer notation: *(*(m + i) + j), **pp += expr, **pp = expr, (*pp)[i]
+            s = s.replace(/\*\s*\(\s*\*\s*\(\s*([A-Za-z_]\w*)\s*\+\s*([^()]+)\)\s*\+\s*([^()]+)\)\s*=\s*([^;]+);/g, "$1[$2][$3] = $4;");
+            s = s.replace(/\*\s*\(\s*\*\s*\(\s*([A-Za-z_]\w*)\s*\+\s*([^()]+)\)\s*\+\s*([^()]+)\)/g, "$1[$2][$3]");
+            s = s.replace(/(^|[;\n{\s])\*\*([A-Za-z_]\w*)\s*([+\-*\/])=\s*([^;]+);/gm, "$1__derefSet(__derefGet($2), __derefGet(__derefGet($2)) $3 ($4));");
+            s = s.replace(/(^|[;\n{\s])\*\*([A-Za-z_]\w*)\s*=\s*([^;]+);/gm, "$1__derefSet(__derefGet($2), $3);");
+            s = s.replace(/\*\*([A-Za-z_]\w*)/g, "__derefGet(__derefGet($1))");
+            s = s.replace(/\(\s*\*([A-Za-z_]\w*)\s*\)\s*\[([^\]]+)\]/g, "__derefGet($1)[$2]");
+
+            // Rewrite *p++ (post-inc deref), (*p)++, *p += expr;, *p = expr;, and *(ptr + idx)
+            s = s.replace(/\*([A-Za-z_]\w*)\+\+/g, "(function(){ const __v = __derefGet($1); $1 = __ptrStep($1, 1); return __v; })()");
             s = s.replace(/\(\s*\*([A-Za-z_]\w*)\s*\)\s*\+\+/g, "__derefSet($1, __derefGet($1) + 1)");
             s = s.replace(/\(\s*\*([A-Za-z_]\w*)\s*\)\s*--/g, "__derefSet($1, __derefGet($1) - 1)");
             s = s.replace(/\*\s*\(\s*([A-Za-z_]\w*)\s*\+\s*([^)]+)\)\s*=\s*([^;]+);/g, "__derefSet(__ptrAdd($1, $2), $3);");
             s = s.replace(/\*\s*\(\s*([A-Za-z_]\w*)\s*\+\s*([^)]+)\)/g, "__derefGet(__ptrAdd($1, $2))");
+            s = s.replace(/\*\s*\(\s*([A-Za-z_]\w*)\s*\)/g, "__derefGet($1)");
             s = s.replace(/(^|[;\n{\s])\*([A-Za-z_]\w*)\s*([+\-*\/])=\s*([^;]+);/gm, "$1__derefSet($2, __derefGet($2) $3 ($4));");
             s = s.replace(/(^|[;\n{\s])\*([A-Za-z_]\w*)\s*=\s*([^;]+);/gm, "$1__derefSet($2, $3);");
-            s = s.replace(/([=(,\[\s?:!<>+\-\/])\*([A-Za-z_]\w*)(?!\s*=)/g, "$1__derefGet($2)");
+            s = s.replace(/([=(,\[\s?:!<>+\-\/])\*([A-Za-z_]\w*)(?!\s*=[^=])/g, "$1__derefGet($2)");
 
-            // Convert ANY scanf(...) (statement OR condition inside if/while) into value-returning IIFE
+            // Pointer arithmetic on known pointer variables AND array decay (p++, p--, p1 + k, s + 3, p2 - p1)
+            const allPtrOrArr = Array.from(new Set([].concat(Array.from(ptrVars), Array.from(arrVars))));
+            if (ptrVars.size > 0) {
+                const pvPat = Array.from(ptrVars).join("|");
+                s = s.replace(new RegExp("\\b(" + pvPat + ")\\s*\\+\\+", "g"), "($1 = __ptrStep($1, 1))");
+                s = s.replace(new RegExp("\\b(" + pvPat + ")\\s*--", "g"), "($1 = __ptrStep($1, -1))");
+                s = s.replace(new RegExp("\\b(" + pvPat + ")\\s*-\\s*(" + pvPat + ")\\b", "g"), "__ptrDiff($1, $2)");
+            }
+            if (allPtrOrArr.length > 0) {
+                const apPat = allPtrOrArr.join("|");
+                s = s.replace(new RegExp("\\b(" + apPat + ")\\s*\\+\\s*([A-Za-z_0-9]+(?:\\s*-\\s*[A-Za-z_0-9]+)?)(?!\\s*\\])", "g"), "__ptrAdd($1, $2)");
+            }
+
+            // Convert scanf(...), fscanf(...), sscanf(...) WHILE strings are STILL stashed as @@STRn@@!
             s = s.replace(/\bscanf\s*\(\s*(@@STR\d+@@)\s*,((?:[^()]|\([^()]*\))*)\)/g, function(_, fmtId, argsStr) {
                 const fmt = strLits[Number(fmtId.replace(/@@STR|@@/g, ""))].slice(1, -1);
                 const specs = fmt.match(/\s*%[a-zA-Z0-9]+/g) || [];
@@ -2721,11 +2936,12 @@ const DATA = __DATA_JSON__;
                 const stmts = [];
                 for (let i = 0; i < specs.length && i < args.length; i++) {
                     const sp = specs[i];
-                    const rawA = args[i];
-                    const cleanVar = rawA.replace(/^&\s*/, "");
+                    const cleanVar = args[i].replace(/^&\s*/, "");
                     const ptrOff = cleanVar.match(/^([A-Za-z_]\w*)\s*\+\s*([A-Za-z_]\w*|\d+)$/);
+                    const ptrAddCall = cleanVar.match(/^__ptrAdd\(([^)]+)\)$/);
                     const writeExpr = function(valExpr) {
                         if (ptrOff) return "__derefSet(__ptrAdd(" + ptrOff[1] + ", " + ptrOff[2] + "), " + valExpr + ");";
+                        if (ptrAddCall && cleanVar.indexOf(".") === -1) return "__derefSet(" + cleanVar + ", " + valExpr + ");";
                         return cleanVar + " = " + valExpr + ";";
                     };
                     if (sp.indexOf("d") !== -1 || sp.indexOf("i") !== -1 || sp.indexOf("u") !== -1) stmts.push(writeExpr("__readInt()"));
@@ -2736,11 +2952,8 @@ const DATA = __DATA_JSON__;
                 return "(function(){ " + stmts.join(" ") + " return " + Math.min(specs.length, args.length) + "; })()";
             });
 
-            // Restore string literals
-            s = s.replace(/@@STR(\d+)@@/g, function(_, idx) { return strLits[Number(idx)]; });
-
-            // fscanf(...) used in while conditions or statements
-            s = s.replace(/\bfscanf\s*\(\s*([A-Za-z_]\w*)\s*,\s*"([^"]*)"\s*,((?:[^()]|\([^()]*\))*)\)/g, function(_, fpVar, fmt, argsStr) {
+            s = s.replace(/\bfscanf\s*\(\s*([A-Za-z_]\w*)\s*,\s*(@@STR\d+@@)\s*,((?:[^()]|\([^()]*\))*)\)/g, function(_, fpVar, fmtId, argsStr) {
+                const fmt = strLits[Number(fmtId.replace(/@@STR|@@/g, ""))].slice(1, -1);
                 const specs = fmt.match(/\s*%[a-zA-Z0-9]+/g) || [];
                 const args = __splitTopArgs(argsStr).map(function(a) { return a.replace(/^&\s*/, ""); });
                 const reads = [];
@@ -2753,7 +2966,21 @@ const DATA = __DATA_JSON__;
                 return "(function(){ let __tv, __ok=0; " + reads.map(function(r) { return "__ok += " + r + ";"; }).join(" ") + " return __ok === " + specs.length + " ? " + specs.length + " : -1; })()";
             });
 
-            // Replace &var and scalar references ONLY inside the function body that actually declared let __box_v
+            s = s.replace(/\bsscanf\s*\(\s*([A-Za-z_]\w*(?:\([^)]*\))?)\s*,\s*(@@STR\d+@@)\s*,((?:[^()]|\([^()]*\))*)\)/g, function(_, srcVar, fmtId, argsStr) {
+                const fmt = strLits[Number(fmtId.replace(/@@STR|@@/g, ""))].slice(1, -1);
+                const specs = fmt.match(/\s*%[a-zA-Z0-9]+/g) || [];
+                const args = __splitTopArgs(argsStr).map(function(a) { return a.replace(/^&\s*/, ""); });
+                const reads = [];
+                for (let i = 0; i < specs.length && i < args.length; i++) {
+                    const sp = specs[i];
+                    if (sp.indexOf("d") !== -1) reads.push("((__tv = __sReadInt(__sp, __ss)) !== null ? (" + args[i] + " = __tv, 1) : 0)");
+                    else if (sp.indexOf("f") !== -1) reads.push("((__tv = __sReadFloat(__sp, __ss)) !== null ? (" + args[i] + " = __tv, 1) : 0)");
+                    else reads.push("__sReadStr(__sp, __ss, " + args[i] + ")");
+                }
+                return "(function(){ const __ss = fromCStr(" + srcVar + "); const __sp = {pos:0}; let __tv, __ok=0; " + reads.map(function(r) { return "__ok += " + r + ";"; }).join(" ") + " return __ok; })()";
+            });
+
+            // Replace &var and scalar references ONLY inside function bodies that declared let __box_v
             if (addrVars.size > 0) {
                 const fnBlocks = s.split(/(?=\bfunction\s+[A-Za-z_]\w*\s*\()/);
                 s = fnBlocks.map(function(blk) {
@@ -2768,7 +2995,7 @@ const DATA = __DATA_JSON__;
                             const prev2 = prev10.slice(-2);
                             if (prev2.endsWith(".")) return match;
                             if (/let\s+$/.test(prev10) || /__box_$/.test(prev10)) return match;
-                            if (prev2.endsWith("&") || prev2.endsWith("& ")) return "__mkPtr(__box_" + v + ", 0)";
+                            if (prev2.endsWith("&") && !prev2.endsWith("&&")) return "__mkPtr(__box_" + v + ", 0)";
                             return "__box_" + v + "[0]";
                         });
                         outBlk = outBlk.replace(new RegExp("&\\s*__mkPtr\\(__box_" + v + ", 0\\)", "g"), "__mkPtr(__box_" + v + ", 0)");
@@ -2776,37 +3003,71 @@ const DATA = __DATA_JSON__;
                     return outBlk;
                 }).join("");
             }
-            // Strip residual & before structs/fields in fwrite(&obj)/fread(&obj)/func(&struct)
-            s = s.replace(/&\s*(__ptrAdd\([^)]+\)\.[A-Za-z_]\w*|[A-Za-z_]\w*(?:\[[^\]]+\])?(?:\.[A-Za-z_]\w*)*)/g, "$1");
+            // Strip residual & before structs/fields/ptrs (ignore && !)
+            s = s.replace(/(^|[^&])&\s*(__ptrAdd\([^)]+\)\.[A-Za-z_]\w*|[A-Za-z_]\w*(?:\[[^\]]+\])?(?:\.[A-Za-z_]\w*)*)/g, "$1$2");
 
-            s = s.replace(/\b(while\s*\([^)]*\)\s*\{|for\s*\([^)]*\)\s*\{)/g, "$1 if (++__steps > 250000) throw new Error('Tempo limite excedido (possível loop infinito).'); ");
+            // Restore string literals AT THE VERY END so inner \n / variable names are never touched
+            s = s.replace(/@@STR(\d+)@@/g, function(_, idx) { return strLits[Number(idx)]; });
+
+            // Inject loop guard into EVERY while (...) { and for (...) { regardless of nested parens!
+            (function injectGuards() {
+                let out = "", i = 0;
+                const guard = " if (++__steps > 100000) throw new Error('Tempo limite excedido (possível loop infinito).'); ";
+                while (i < s.length) {
+                    const m = (i === 0 || !/[A-Za-z0-9_]/.test(s[i - 1])) ? s.slice(i).match(/^(?:while|for)\s*\(/) : null;
+                    if (m) {
+                        let p = i + m[0].length - 1, d = 0, inStr = false, qCh = "";
+                        while (p < s.length) {
+                            const ch = s[p];
+                            if (inStr) { if (ch === "\\") p++; else if (ch === qCh) inStr = false; }
+                            else {
+                                if (ch === '"' || ch === "'") { inStr = true; qCh = ch; }
+                                else if (ch === "(") d++;
+                                else if (ch === ")") { d--; if (d === 0) break; }
+                            }
+                            p++;
+                        }
+                        let after = p + 1;
+                        while (after < s.length && /\s/.test(s[after])) after++;
+                        if (s[after] === "{") {
+                            out += s.slice(i, after + 1) + guard;
+                            i = after + 1;
+                            continue;
+                        }
+                    }
+                    out += s[i++];
+                }
+                s = out;
+            })();
             return structFactories.join("\n") + "\n" + s;
         }
 
         try {
             const jsCode = __transpileC(sourceCode);
             const runner = new Function(
+                "stdin", "stdout", "stderr", "errno", "strerror", "setvbuf",
                 "__readInt", "__readFloat", "__readChar", "__readStr",
-                "fgets", "getchar", "putchar", "puts", "printf", "fprintf", "sprintf", "perror",
+                "fgets", "getchar", "putchar", "puts", "printf", "fprintf", "sprintf", "snprintf", "perror",
                 "fopen", "fclose", "fflush", "feof", "ferror", "clearerr", "rewind", "ftell", "fseek",
                 "removeFile", "renameFile", "tmpfile", "fputc", "fputs", "fgetc", "fwrite", "fread",
-                "__fReadInt", "__fReadFloat", "__fReadStr",
+                "__fReadInt", "__fReadFloat", "__fReadStr", "__sReadInt", "__sReadFloat", "__sReadStr", "fromCStr", "toCStrArr",
                 "strlen", "strcpy", "strncpy", "strcat", "strcmp", "strncmp", "strcspn", "strstr", "strtok",
                 "tolower", "toupper", "isalpha", "isdigit", "isalnum", "isspace", "atoi", "atof",
                 "malloc", "calloc", "realloc", "free", "qsort",
-                "__arr1d", "__arr2d", "__mkPtr", "__derefGet", "__derefSet", "__ptrAdd", "__ptrStep",
-                "let __steps = 0;\n" + jsCode + "\nif (typeof main === 'function') main();"
+                "__arr1d", "__arr2d", "__mkPtr", "__derefGet", "__derefSet", "__ptrAdd", "__ptrDiff", "__ptrStep", "__sizeof", "__applyStructInit",
+                "let __steps = 0;\n" + jsCode + "\nif (typeof main === 'function') { main.length >= 2 ? main(3, __mkPtr([toCStrArr('app'), toCStrArr('entrada.txt'), toCStrArr('saida.txt')], 0)) : main(); }"
             );
             runner(
+                stdin, stdout, stderr, errno, strerror, setvbuf,
                 __readInt, __readFloat, __readChar, __readStr,
-                fgets, getchar, putchar, puts, printf, fprintf, sprintf, perror,
+                fgets, getchar, putchar, puts, printf, fprintf, sprintf, snprintf, perror,
                 fopen, fclose, fflush, feof, ferror, clearerr, rewind, ftell, fseek,
                 removeFile, renameFile, tmpfile, fputc, fputs, fgetc, fwrite, fread,
-                __fReadInt, __fReadFloat, __fReadStr,
+                __fReadInt, __fReadFloat, __fReadStr, __sReadInt, __sReadFloat, __sReadStr, fromCStr, toCStrArr,
                 strlen, strcpy, strncpy, strcat, strcmp, strncmp, strcspn, strstr, strtok,
                 tolower, toupper, isalpha, isdigit, isalnum, isspace, atoi, atof,
                 malloc, calloc, realloc, free, qsort,
-                __arr1d, __arr2d, __mkPtr, __derefGet, __derefSet, __ptrAdd, __ptrStep
+                __arr1d, __arr2d, __mkPtr, __derefGet, __derefSet, __ptrAdd, __ptrDiff, __ptrStep, __sizeof, __applyStructInit
             );
             const vfsSnapshot = {};
             const fnames = Object.keys(__vfs);
@@ -2820,14 +3081,14 @@ const DATA = __DATA_JSON__;
                 }
                 vfsSnapshot[fn] = { size: bytes.length, preview: preview };
             }
-            return { ok: true, output: stdout, files: vfsSnapshot };
+            return { ok: true, output: __stdoutBuf, files: vfsSnapshot };
         } catch (err) {
-            return { ok: false, error: err && err.message ? err.message : String(err), output: stdout, files: {} };
+            return { ok: false, error: err && err.message ? err.message : String(err), output: __stdoutBuf, files: {} };
         }
     }
 
     function escapeHtml(str) {
-        return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
     }
 
     function highlightC(code) {
@@ -3786,9 +4047,17 @@ const DATA = __DATA_JSON__;
         clean: '#include <stdio.h>\n\nint main(void) {\n    printf("Ola, Ponteiros, Structs e Arquivos!\\n");\n    return 0;\n}'
     };
 
+    function preparePlaygroundCode(raw) {
+        const s = String(raw || "").trim();
+        if (!s) return PG_TEMPLATES.ptr;
+        if (/\bmain\s*\(/.test(s)) return s;
+        return '#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\nint main(void) {\n    ' +
+            s.split('\n').join('\n    ') + '\n    return 0;\n}';
+    }
+
     function openPlayground(code, titleHint) {
         const modal = document.getElementById("c-playground-modal");
-        document.getElementById("code-area-pg").value = code || PG_TEMPLATES.ptr;
+        document.getElementById("code-area-pg").value = preparePlaygroundCode(code);
         document.getElementById("pg-modal-title").textContent = titleHint ? ("⚡ Playground C — " + titleHint) : "⚡ Playground & Testador de Código C";
         document.getElementById("pg-stdout").textContent = 'Clique em "▶ Executar Código C".';
         document.getElementById("pg-stdout").classList.remove("err");
@@ -3835,6 +4104,45 @@ const DATA = __DATA_JSON__;
     updateProgressUI();
 
     window.__runCProgramTest = runCProgram;
+    window.__selfTestAll = function() {
+        const fails = [];
+        let total = 0, passed = 0;
+        const dummyIn = "3\n1 Ana 8.5\n2 Bruno 7.0\n3 Carla 9.0\n10 20 30\n";
+        function chk(lbl, code, stdinOverride) {
+            total++;
+            const r = runCProgram(code, stdinOverride !== undefined ? stdinOverride : dummyIn);
+            if (r.ok) passed++;
+            else fails.push(lbl + " -> " + r.error);
+        }
+        Object.keys(PG_TEMPLATES).forEach(function(k) { chk("PG:" + k, PG_TEMPLATES[k]); });
+        [].concat(DATA.ponteiros, DATA.structs, DATA.arquivos).forEach(function(t) { chk("topic:" + t.id, t.code); });
+        ["ponteiros", "structs", "arquivos"].forEach(function(cat) {
+            (DATA.categoryExercises[cat] || []).forEach(function(q) { chk("mcq_sol:" + q.id, q.solutionCode); });
+        });
+        (DATA.classical || []).forEach(function(cl) { chk("classical:" + cl.id, cl.code); });
+        let simPassed = 0, simTotal = 0;
+        (DATA.simulados || []).forEach(function(sim) {
+            sim.questions.forEach(function(q) {
+                if (q.modelCode && q.tests) {
+                    q.tests.forEach(function(tc, ti) {
+                        simTotal++; total++;
+                        const r = runCProgram(q.modelCode, tc.in);
+                        if (r.ok && normOut(r.output) === normOut(tc.out)) { passed++; simPassed++; }
+                        else fails.push("sim:" + q.id + "#" + (ti + 1) + " -> " + (r.error || ("got=" + normOut(r.output))));
+                    });
+                }
+            });
+        });
+        return { total: total, passed: passed, simPassed: simPassed, simTotal: simTotal, fails: fails };
+    };
+    if (window.location.search.indexOf("selftest=1") !== -1) {
+        const res = window.__selfTestAll();
+        const box = document.createElement("div");
+        box.id = "selftest-report";
+        box.style.cssText = "background:#0f172a;color:#e2e8f0;padding:12px 16px;font-family:monospace;font-size:12px;border-bottom:2px solid #22c55e;white-space:pre-wrap;";
+        box.textContent = "SELFTEST: " + res.passed + "/" + res.total + " PASS | SIMULADOS: " + res.simPassed + "/" + res.simTotal + (res.fails.length ? ("\nFAILS:\n" + res.fails.join("\n")) : "\nALL 0 ERRORS!");
+        document.body.insertBefore(box, document.body.firstChild);
+    }
 
     document.addEventListener("click", function(e) {
         if (e.target && e.target.id === "c-playground-modal") { closePlayground(); return; }

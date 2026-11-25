@@ -147,7 +147,7 @@ TOPICS_ARQUIVOS = [
             "}"
         ),
         "logicSteps": [
-            "FILE *fp declara um ponteiro para a estrutura de controle de fluxo definida em <stdio.h>, inicializado com NULL.",
+            "<code>FILE *fp</code> declara um ponteiro para a estrutura de controle de fluxo definida em <code>&lt;stdio.h&gt;</code>, inicializado com <code>NULL</code>.",
             "fopen aloca/inicializa o objeto FILE interno e retorna seu endereço em fp (ou NULL em caso de falha).",
             "Após fclose(fp), a estrutura FILE é liberada; atribuir fp = NULL impede uso acidental posterior."
         ],
@@ -1828,6 +1828,24 @@ TOPICS_ARQUIVOS = [
             "        idx++;\n"
             "    }\n"
             "    fclose(fp);\n"
+            "    return 0;\n"
+            "}\n\n"
+            "int main(void) {\n"
+            "    FILE *fp = fopen(\"contas.bin\", \"wb\");\n"
+            "    if (!fp) return 1;\n"
+            "    Conta c1 = {1, \"Ana\", 500.0, 1};\n"
+            "    Conta c2 = {2, \"Bruno\", 900.0, 1};\n"
+            "    fwrite(&c1, sizeof(Conta), 1, fp);\n"
+            "    fwrite(&c2, sizeof(Conta), 1, fp);\n"
+            "    fclose(fp);\n\n"
+            "    if (atualizar_saldo(\"contas.bin\", 2, 1500.0)) {\n"
+            "        fp = fopen(\"contas.bin\", \"rb\");\n"
+            "        Conta lida;\n"
+            "        while (fread(&lida, sizeof(Conta), 1, fp) == 1) {\n"
+            "            printf(\"ID %d (%s): R$ %.2f\\n\", lida.id, lida.nome, lida.saldo);\n"
+            "        }\n"
+            "        fclose(fp);\n"
+            "    }\n"
             "    return 0;\n"
             "}"
         ),
