@@ -4,10 +4,11 @@ Time real de 5 agentes de IA construído com **Google Antigravity Skills** e **G
 
 ## O que este projeto resolve
 Transforma qualquer assunto de aula de **Análise e Desenvolvimento de Sistemas (ADS)** em um pacote interativo de estudo direto ao ponto — sem enrolação — pronto para **GitHub Pages** e **Google Sites**:
-- **Resumo Direto:** blocos curtos, analogias, código comentado, armadilhas de prova, busca instantânea e cola rápida (`fopen`).
-- **Simulador Visual de Memória:** passo a passo de endereços, ponteiros (`&`, `*`) e acesso a `struct` via seta (`->`).
-- **Certo ou Errado:** questões filtráveis por subtópico com explicação passo a passo numerada.
-- **Simulado Inteligente:** barra de progresso, timer opcional, alerta de pendências, filtro *"Ver apenas as que errei"* e persistência em `localStorage`.
+- **Visualização e Simulação v4.0 (Guia Mestre em C):**
+  - **53 Tópicos completos** (18 Ponteiros + 18 Structs + 17 Arquivos) com diagramas de memória, rastreio passo a passo embutido e 3 Micro-Sandboxes interativos (Stack/Heap, Padding/Union, Modos `fopen`/`fseek`).
+  - **120+ Itens Práticos:** 90 questões A–E (30 por categoria com minimapa `1..30` e favoritos `★`), 30 afirmações Certo/Errado, 6 problemas clássicos resolvidos e **3 Simulados ATP cronometrados (2h, 14 questões)** com corretor automático C.
+  - **Playground C Estendido:** executa `struct`, `.` / `->`, `&` / `*`, `malloc`/`calloc`/`realloc`/`free` e sistema de arquivos virtual (`FILE *` com `fopen`, `fprintf`, `fscanf`, `fwrite`, `fread`, `fseek`, `ftell`).
+  - **UX de Estudo:** Modo Escuro, `A−`/`A+`, busca global (`/` ou `Ctrl+K`), Cheat Sheet pré-prova em 4 abas e Timer Pomodoro (`🍅 25:00`).
 
 ---
 
@@ -43,9 +44,13 @@ Transforma qualquer assunto de aula de **Análise e Desenvolvimento de Sistemas 
   ```powershell
   .\.venv\Scripts\python.exe run_team.py --topic "Alocação Dinâmica (malloc/free) em C"
   ```
-- **Validar um pacote gerado e gerar `embed-google-sites.html`:**
+- **Gerar/Recompilar o Guia Mestre v4.0:**
   ```powershell
-  .\.venv\Scripts\python.exe run_team.py --validate-output outputs\v3-c-ponteiros-struct-arquivo
+  .\.venv\Scripts\python.exe builder\build_master_site.py
+  ```
+- **Validar o pacote v4:**
+  ```powershell
+  .\.venv\Scripts\python.exe builder\build_master_site.py
   ```
 
 ---
@@ -72,7 +77,8 @@ Transforma qualquer assunto de aula de **Análise e Desenvolvimento de Sistemas 
 ## Estrutura do Projeto
 - `.agents/skills/` — As 5 Skills do time no Google Antigravity
 - `src/ads_team/` — Grafo ADK 2.15.0 (`workflow.py`), prompts (`prompts.py`) e validadores (`tools.py`)
-- `docs/` — Pacote web publicado (`v3`: ATP — Ponteiros, Struct e Arquivo em C)
-- `outputs/` — Histórico evolutivo auditado (`v1` → `v2` → `v3`)
+- `builder/` — Módulos geradores da v4.0 (`spec.py`, `mod_*.py`, `ex_*.py`, `simulados_atp.py`, `ui_template.py`, `build_master_site.py`)
+- `docs/` — Pacote web publicado (`v4`: Guia Mestre — 53 tópicos de Ponteiros, Structs e Arquivos em C)
+- `outputs/` — Histórico evolutivo auditado (`v1` → `v2` → `v3` → `v4-guia-mestre-ponteiros-structs-arquivos`)
 - `logs/runs.jsonl` — Métricas das execuções para o loop semanal
 - `memory.md` & `schema.json` — Memória curta do time e contrato de dados

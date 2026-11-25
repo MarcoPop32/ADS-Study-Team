@@ -1,0 +1,43 @@
+{
+  "version": "v4",
+  "title": "Guia Mestre Interativo em C — Ponteiros, Structs e Arquivos",
+  "timestamp": "2026-11-25T00:15:34+00:00",
+  "status": "APPROVED",
+  "score": 99,
+  "coverage": {
+    "topics_ponteiros": 18,
+    "topics_structs": 18,
+    "topics_arquivos": 17,
+    "topics_total": 53,
+    "mcq_per_module": 30,
+    "mcq_total": 90,
+    "certo_errado_total": 30,
+    "classical_solved_total": 6,
+    "simulados_atp": 3,
+    "simulado_questions_total": 42,
+    "cheatsheet_panels": 4
+  },
+  "references": [
+    "Deitel & Deitel — C: Como Programar (6ª Ed., Caps. 7, 10 e 11)",
+    "Herbert Schildt — C Completo e Total",
+    "ATP MATERIAL — Exercicios_Estruturas_Unioes_Enumeracoes.pdf"
+  ],
+  "browser_verification": {
+    "console_errors": 0,
+    "page_errors": 0,
+    "desktop_1280x900_ok": true,
+    "google_sites_700px_overflow_px": 0,
+    "dark_mode_verified": true,
+    "playground_vfs_verified": true,
+    "simulado_model_code_tests_passed": "18/18 (s1-q13..s3-q14)",
+    "screenshots": [
+      "final_step_98.png",
+      "final_step_133.png"
+    ]
+  },
+  "artifacts": [
+    "outputs/v4-guia-mestre-ponteiros-structs-arquivos/index.html",
+    "docs/index.html",
+    "docs/embed-google-sites.html"
+  ]
+}

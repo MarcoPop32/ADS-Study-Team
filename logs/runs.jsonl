@@ -1,3 +1,5 @@
 {"timestamp": "2026-11-24T21:22:00+00:00", "versao": "v1", "topic": "ATP: Ponteiros, Struct e Arquivo em C", "mode": "antigravity-skills-live", "rounds": 1, "first_pass_approved": true, "score": 88, "weakest_agent": "construtor", "browser_verified": true}
 {"timestamp": "2026-11-24T21:40:00+00:00", "versao": "v2", "topic": "ATP: Ponteiros, Struct e Arquivo em C", "mode": "antigravity-skills-live", "rounds": 1, "first_pass_approved": true, "score": 94, "weakest_agent": "none", "browser_verified": true}
 {"timestamp": "2026-11-24T21:40:05+00:00", "versao": "v3", "topic": "ATP: Ponteiros, Struct e Arquivo em C", "mode": "antigravity-skills-live", "rounds": 1, "first_pass_approved": true, "score": 97, "weakest_agent": "none", "browser_verified": true}
+
+{"timestamp": "2026-11-25T00:15:34+00:00", "versao": "v4", "topic": "ATP: Guia Mestre Interativo em C (53 subtopicos Ponteiros, Structs e Arquivos)", "mode": "multiagent-builder-v4", "rounds": 3, "first_pass_approved": false, "score": 99, "weakest_agent": "none", "browser_verified": true}
